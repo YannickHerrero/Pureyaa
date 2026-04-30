@@ -8,7 +8,9 @@
     "android": "expo start --android",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "download-dicts": "node scripts/download-dicts.mjs"
+    "download-dicts": "node scripts/download-dicts.mjs",
+    "update:staging": "eas update --branch staging --message",
+    "update:production": "eas update --branch production --message"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
@@ -21,6 +23,7 @@
     "expo-screen-orientation": "~8.0.0",
     "expo-secure-store": "~14.0.0",
     "expo-status-bar": "~2.0.0",
+    "expo-updates": "^55.0.21",
     "expo-video": "~2.0.1",
     "expo-video-thumbnails": "~9.0.2",
     "kuromoji-react-native": "^1.0.1",

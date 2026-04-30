@@ -33,6 +33,22 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "6bd145bf-f059-435e-9d30-eb5b9ca19864"
+      }
+    },
+    "owner": "yherrero",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6bd145bf-f059-435e-9d30-eb5b9ca19864"
+    },
+    "ios": {}
   }
 }
