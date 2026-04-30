@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ActivityIndicator,
   useWindowDimensions,
-  Pressable,
 } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -13,6 +12,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { usePlayerData } from '@/player/playerStore';
 import { SubtitlePane } from '@/player/SubtitlePane';
 import { DictPopup } from '@/player/DictPopup';
+import { Controls } from '@/player/Controls';
 import { findCueIndexAt } from '@/utils/time';
 import { getSettings } from '@/storage/settings';
 import { loadDictionaries } from '@/analysis/dict';
@@ -61,6 +61,7 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
   });
 
   const [currentMs, setCurrentMs] = useState(0);
+  const [durationMs, setDurationMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [mode, setMode] = useState<SubtitleMode>(DEFAULT_SETTINGS.defaultSubtitleMode);
   const [popup, setPopup] = useState<{ cue: Cue; tokenIndex: number } | null>(null);
@@ -80,9 +81,14 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
     const subPlaying = player.addListener('playingChange', (e) => {
       setIsPlaying(e.isPlaying);
     });
+    const subStatus = player.addListener('statusChange', () => {
+      const d = player.duration;
+      if (Number.isFinite(d) && d > 0) setDurationMs(Math.round(d * 1000));
+    });
     return () => {
       sub.remove();
       subPlaying.remove();
+      subStatus.remove();
     };
   }, [player]);
 
@@ -116,7 +122,18 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
           }}
         />
       </View>
-      <BasicControls player={player} isPlaying={isPlaying} />
+      <Controls
+        isPlaying={isPlaying}
+        currentMs={currentMs}
+        durationMs={durationMs > 0 ? durationMs : entry.durationSeconds * 1000}
+        cues={cues}
+        retimer={entry.retimerState}
+        currentCueIndex={currentCueIndex}
+        onPlayPause={() => (isPlaying ? player.pause() : player.play())}
+        onSeekMs={(ms) => {
+          player.currentTime = ms / 1000;
+        }}
+      />
       <DictPopup
         visible={popup !== null}
         cue={popup?.cue ?? null}
@@ -125,30 +142,6 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
         onClose={() => setPopup(null)}
       />
     </View>
-  );
-}
-
-function BasicControls({
-  player,
-  isPlaying,
-}: {
-  player: ReturnType<typeof useVideoPlayer>;
-  isPlaying: boolean;
-}) {
-  const lastTap = useRef(0);
-  return (
-    <Pressable
-      style={styles.controls}
-      onPress={() => {
-        const now = Date.now();
-        if (now - lastTap.current < 300) return;
-        lastTap.current = now;
-        if (isPlaying) player.pause();
-        else player.play();
-      }}
-    >
-      <Text style={styles.controlText}>{isPlaying ? 'Pause' : 'Play'}</Text>
-    </Pressable>
   );
 }
 
@@ -161,14 +154,4 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0a0a0a',
   },
-  controls: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderRadius: 6,
-  },
-  controlText: { color: '#fff', fontWeight: '600' },
 });
