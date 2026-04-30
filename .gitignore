@@ -5,6 +5,7 @@ node_modules/
 .expo/
 .expo-shared/
 dist/
+dist-update/
 web-build/
 
 # Native

@@ -8,8 +8,9 @@
     "android": "expo start --android",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "update:staging": "eas update --branch staging --message",
-    "update:production": "eas update --branch production --message"
+    "export:update": "expo export --platform ios --platform android --source-maps --dump-assetmap --no-bytecode --output-dir dist-update",
+    "update:staging": "pnpm export:update && eas update --skip-bundler --input-dir dist-update --branch staging --message",
+    "update:production": "pnpm export:update && eas update --skip-bundler --input-dir dist-update --branch production --message"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
