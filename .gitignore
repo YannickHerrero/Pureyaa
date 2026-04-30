@@ -47,3 +47,6 @@ coverage/
 
 # Spec (kept locally only)
 specs.md
+
+# Download cache (used by scripts/download-dicts.mjs)
+tmp/

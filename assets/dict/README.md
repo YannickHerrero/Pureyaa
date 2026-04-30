@@ -1,11 +1,23 @@
 # Dictionary data
 
-The placeholder files in this directory are empty. The app builds and runs against them, but no dictionary lookups will resolve until you replace them with real data.
+This directory holds the bundled JMdict + JMnedict data the app reads at runtime. The repo ships **tiny placeholders** (`{"index":{},"entries":{}}`) so the project builds without doing anything; populate them with real data via:
 
-## Schema
+```bash
+npm run download-dicts
+```
+
+That script:
+
+1. Downloads the latest `jmdict-eng-*.json.tgz` and `jmnedict-all-*.json.tgz` releases from [scriptin/jmdict-simplified](https://github.com/scriptin/jmdict-simplified) (EDRDG license).
+2. Extracts and converts each to the schema below.
+3. Overwrites `jmdict.json` + `jmnedict.json` here.
+4. Marks both files with `git update-index --skip-worktree` so the ~100 MB diffs don't show in `git status`.
+
+If you ever want to update the placeholders (e.g. on a different machine), run `git update-index --no-skip-worktree assets/dict/{jmdict,jmnedict}.json` first.
+
+## Schema (input to `src/analysis/dict.ts`)
 
 ```jsonc
-// jmdict.json (and same for jmnedict.json)
 {
   "index": {
     // form (kanji or kana) → entry ids that contain this form
@@ -21,23 +33,17 @@ The placeholder files in this directory are empty. The app builds and runs again
         {
           "pos": ["v1", "vt"],
           "glosses": ["to eat"],
-          "examples": [{ "jpn": "ご飯を食べる。", "eng": "I eat rice." }]
+          "fields": ["food"],
+          "misc": ["uk"]
         }
       ],
-      "frequency": "ichi1",
-      "nameType": []
+      "frequency": "common",      // jmdict only — set when any kanji/kana is "common"
+      "nameType": ["person"]      // jmnedict only — copied from translation.type
     }
   }
 }
 ```
 
-The `nameType` field is only populated for JMnedict (e.g. `["person"]`, `["place"]`, `["organization"]`).
+## License
 
-## Sourcing
-
-- **JMDict / JMnedict** — official XML release at <https://www.edrdg.org/jmdict/edict.html>. Convert with your tool of choice; many community converters exist.
-- License: [EDRDG license](https://www.edrdg.org/edrdg/licence.html). Attribution required.
-
-## Why the files aren't bundled
-
-A real JMDict bundle is on the order of 50–100 MB; JMnedict adds another ~30 MB. We don't want them in git history — keep them locally in this directory.
+JMdict / JMnedict are © Electronic Dictionary Research and Development Group (EDRDG), used under the [EDRDG license](https://www.edrdg.org/edrdg/licence.html). Attribution required.

@@ -66,12 +66,13 @@ Open the app, go to **Settings**, paste your Anthropic API key, pick a model, an
 
 ## Dictionary data
 
-The repo ships with placeholder dictionary data so the project builds. Drop in real data before relying on it:
+The repo ships with empty placeholders. Populate them in one step:
 
-- **JMDict** — convert from the official EDRDG release.
-- **JMnedict** — same source, the proper-noun edition.
+```bash
+npm run download-dicts
+```
 
-Place the converted files at `assets/dict/jmdict.json` and `assets/dict/jmnedict.json`. The exact JSON schema is documented in `src/analysis/dict.ts`. Both files are large (tens of MB); they are intentionally not in git.
+This downloads the latest [scriptin/jmdict-simplified](https://github.com/scriptin/jmdict-simplified) releases (full English JMdict + JMnedict), converts them to the schema in `src/analysis/dict.ts`, and writes them in place. The dict files become ~100 MB combined; the script marks them `--skip-worktree` so the diffs don't show in `git status`. Schema details and the EDRDG license note live in [`assets/dict/README.md`](./assets/dict/README.md).
 
 ## Privacy + scope
 
