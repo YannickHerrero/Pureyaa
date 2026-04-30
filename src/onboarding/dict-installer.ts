@@ -14,6 +14,9 @@ export type InstallStage =
 
 export interface InstallProgress {
   stage: InstallStage;
+  current?: number;
+  total?: number;
+  unit?: 'bytes' | 'items';
 }
 
 const RELEASE_API =
@@ -44,10 +47,31 @@ function findAsset(release: Release, predicate: (name: string) => boolean): Rele
   return a;
 }
 
-async function downloadTgz(asset: ReleaseAsset): Promise<Uint8Array> {
-  const r = await fetch(asset.browser_download_url);
-  if (!r.ok) throw new Error(`HTTP ${r.status} downloading ${asset.name}`);
-  return new Uint8Array(await r.arrayBuffer());
+// XHR is used (instead of fetch) because RN's fetch buffers the whole body
+// before resolving — there's no way to observe per-chunk progress. XHR's
+// `onprogress` event gives us byte counts during download.
+function downloadTgzWithProgress(
+  asset: ReleaseAsset,
+  onProgress: (received: number, total: number) => void,
+): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.responseType = 'arraybuffer';
+    xhr.open('GET', asset.browser_download_url);
+    xhr.onprogress = (e) => {
+      const total = e.lengthComputable ? e.total : asset.size;
+      onProgress(e.loaded, total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(new Uint8Array(xhr.response as ArrayBuffer));
+      } else {
+        reject(new Error(`HTTP ${xhr.status} downloading ${asset.name}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error(`Network error downloading ${asset.name}`));
+    xhr.send();
+  });
 }
 
 function tgzToJsonText(compressed: Uint8Array): string {
@@ -69,24 +93,30 @@ export async function installDictionaries(
     (n) =>
       n.startsWith('jmdict-eng-') && !n.includes('-common-') && n.endsWith('.json.tgz'),
   );
-  onProgress?.({ stage: 'downloading-jmdict' });
-  const jmdictTgz = await downloadTgz(jmdictAsset);
+  const jmdictTgz = await downloadTgzWithProgress(jmdictAsset, (received, total) => {
+    onProgress?.({ stage: 'downloading-jmdict', current: received, total, unit: 'bytes' });
+  });
   onProgress?.({ stage: 'processing-jmdict' });
   const jmdictRaw = JSON.parse(tgzToJsonText(jmdictTgz)) as { words?: unknown[] };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const jmdictBundle = convertJmdict((jmdictRaw.words ?? []) as any[]);
+  const jmdictBundle = await convertJmdict((jmdictRaw.words ?? []) as any[], (current, total) => {
+    onProgress?.({ stage: 'processing-jmdict', current, total, unit: 'items' });
+  });
   JMDICT_FILE.write(JSON.stringify(serializeBundle(jmdictBundle)));
 
   const jmnedictAsset = findAsset(
     release,
     (n) => n.startsWith('jmnedict-all-') && n.endsWith('.json.tgz'),
   );
-  onProgress?.({ stage: 'downloading-jmnedict' });
-  const jmnedictTgz = await downloadTgz(jmnedictAsset);
+  const jmnedictTgz = await downloadTgzWithProgress(jmnedictAsset, (received, total) => {
+    onProgress?.({ stage: 'downloading-jmnedict', current: received, total, unit: 'bytes' });
+  });
   onProgress?.({ stage: 'processing-jmnedict' });
   const jmnedictRaw = JSON.parse(tgzToJsonText(jmnedictTgz)) as { words?: unknown[] };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const jmnedictBundle = convertJmnedict((jmnedictRaw.words ?? []) as any[]);
+  const jmnedictBundle = await convertJmnedict((jmnedictRaw.words ?? []) as any[], (current, total) => {
+    onProgress?.({ stage: 'processing-jmnedict', current, total, unit: 'items' });
+  });
   JMNEDICT_FILE.write(JSON.stringify(serializeBundle(jmnedictBundle)));
 
   onProgress?.({ stage: 'done' });
