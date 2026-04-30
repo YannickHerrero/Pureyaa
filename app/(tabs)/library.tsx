@@ -14,6 +14,8 @@ import { listEntries } from '@/storage/entries';
 import { groupBySeries, type GroupedItem, type SortKey } from '@/utils/grouping';
 import { isWatched, type LibraryEntry } from '@/types';
 import { formatHMS } from '@/utils/time';
+import { EntryContextMenu } from '@/library/EntryContextMenu';
+import { SeriesContextMenu } from '@/library/SeriesContextMenu';
 
 const SORT_LABELS: Record<SortKey, string> = {
   dateAdded: 'Newest',
@@ -30,6 +32,8 @@ export default function LibraryScreen() {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [refreshing, setRefreshing] = useState(false);
+  const [entryMenu, setEntryMenu] = useState<LibraryEntry | null>(null);
+  const [seriesMenu, setSeriesMenu] = useState<{ name: string; entries: LibraryEntry[] } | null>(null);
 
   const reload = useCallback(async () => {
     const e = await listEntries();
@@ -47,6 +51,9 @@ export default function LibraryScreen() {
   );
 
   const items = groupBySeries(entries, sort, query);
+  const knownSeries = Array.from(
+    new Set(entries.map((e) => e.seriesName).filter((s): s is string => !!s)),
+  );
 
   return (
     <View style={styles.root}>
@@ -97,10 +104,24 @@ export default function LibraryScreen() {
                   : undefined
               }
               onOpenEntry={(e) => router.push({ pathname: '/player/[id]', params: { id: e.id } })}
+              onLongPressEntry={(e) => setEntryMenu(e)}
+              onLongPressSeries={(s) => setSeriesMenu(s)}
             />
           ))
         )}
       </ScrollView>
+
+      <EntryContextMenu
+        entry={entryMenu}
+        knownSeries={knownSeries}
+        onClose={() => setEntryMenu(null)}
+        onChanged={reload}
+      />
+      <SeriesContextMenu
+        series={seriesMenu}
+        onClose={() => setSeriesMenu(null)}
+        onChanged={reload}
+      />
     </View>
   );
 }
@@ -110,18 +131,32 @@ function ItemRow({
   expanded,
   onToggleExpand,
   onOpenEntry,
+  onLongPressEntry,
+  onLongPressSeries,
 }: {
   item: GroupedItem;
   expanded: boolean;
   onToggleExpand?: () => void;
   onOpenEntry: (e: LibraryEntry) => void;
+  onLongPressEntry: (e: LibraryEntry) => void;
+  onLongPressSeries: (s: { name: string; entries: LibraryEntry[] }) => void;
 }) {
   if (item.kind === 'standalone') {
-    return <EntryTile entry={item.entry} onPress={() => onOpenEntry(item.entry)} />;
+    return (
+      <EntryTile
+        entry={item.entry}
+        onPress={() => onOpenEntry(item.entry)}
+        onLongPress={() => onLongPressEntry(item.entry)}
+      />
+    );
   }
   return (
     <View style={styles.series}>
-      <Pressable style={styles.seriesHead} onPress={onToggleExpand}>
+      <Pressable
+        style={styles.seriesHead}
+        onPress={onToggleExpand}
+        onLongPress={() => onLongPressSeries({ name: item.name, entries: item.entries })}
+      >
         <Text style={styles.seriesArrow}>{expanded ? '▾' : '▸'}</Text>
         <Text style={styles.seriesName}>{item.name}</Text>
         <Text style={styles.seriesCount}>{item.entries.length}</Text>
@@ -129,7 +164,13 @@ function ItemRow({
       {expanded && (
         <View style={styles.seriesBody}>
           {item.entries.map((e) => (
-            <EntryTile key={e.id} entry={e} onPress={() => onOpenEntry(e)} indented />
+            <EntryTile
+              key={e.id}
+              entry={e}
+              onPress={() => onOpenEntry(e)}
+              onLongPress={() => onLongPressEntry(e)}
+              indented
+            />
           ))}
         </View>
       )}
@@ -140,16 +181,19 @@ function ItemRow({
 function EntryTile({
   entry,
   onPress,
+  onLongPress,
   indented,
 }: {
   entry: LibraryEntry;
   onPress: () => void;
+  onLongPress?: () => void;
   indented?: boolean;
 }) {
   return (
     <Pressable
       style={[styles.tile, indented && styles.tileIndented]}
       onPress={onPress}
+      onLongPress={onLongPress}
     >
       {entry.thumbnailPath ? (
         <Image source={{ uri: entry.thumbnailPath }} style={styles.thumb} contentFit="cover" />
