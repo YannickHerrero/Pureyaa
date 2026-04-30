@@ -57,11 +57,27 @@ function pushIndex(index: Map<string, number[]>, key: string, id: number): void 
   }
 }
 
-export function convertJmdict(words: RawJmdictWord[]): DictBundle {
+export type ItemProgress = (current: number, total: number) => void;
+
+// Yield to the event loop every N items so the UI can repaint progress.
+// Lower = smoother UI, higher = less total overhead. Each yield is one
+// frame (~16ms on RN), so 5000 keeps total overhead under 1.5s for the
+// largest dict (~750k entries).
+const YIELD_EVERY = 5000;
+
+const yieldToEventLoop = (): Promise<void> =>
+  new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+export async function convertJmdict(
+  words: RawJmdictWord[],
+  onProgress?: ItemProgress,
+): Promise<DictBundle> {
   const index = new Map<string, number[]>();
   const entries = new Map<number, DictEntry>();
+  const total = words.length;
 
-  for (const w of words) {
+  for (let i = 0; i < total; i++) {
+    const w = words[i];
     const id = Number(w.id);
     if (!Number.isFinite(id)) continue;
 
@@ -85,16 +101,27 @@ export function convertJmdict(words: RawJmdictWord[]): DictBundle {
     entries.set(id, entry);
     for (const f of forms) pushIndex(index, f, id);
     for (const r of readings) pushIndex(index, r, id);
+
+    if (i % YIELD_EVERY === 0) {
+      onProgress?.(i, total);
+      await yieldToEventLoop();
+    }
   }
 
+  onProgress?.(total, total);
   return { index, entries };
 }
 
-export function convertJmnedict(words: RawJmnedictWord[]): DictBundle {
+export async function convertJmnedict(
+  words: RawJmnedictWord[],
+  onProgress?: ItemProgress,
+): Promise<DictBundle> {
   const index = new Map<string, number[]>();
   const entries = new Map<number, DictEntry>();
+  const total = words.length;
 
-  for (const w of words) {
+  for (let i = 0; i < total; i++) {
+    const w = words[i];
     const id = Number(w.id);
     if (!Number.isFinite(id)) continue;
 
@@ -118,7 +145,13 @@ export function convertJmnedict(words: RawJmnedictWord[]): DictBundle {
     entries.set(id, entry);
     for (const f of forms) pushIndex(index, f, id);
     for (const r of readings) pushIndex(index, r, id);
+
+    if (i % YIELD_EVERY === 0) {
+      onProgress?.(i, total);
+      await yieldToEventLoop();
+    }
   }
 
+  onProgress?.(total, total);
   return { index, entries };
 }
