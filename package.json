@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "download-dicts": "node scripts/download-dicts.mjs",
+    "eas-build-post-install": "node scripts/download-dicts.mjs",
     "update:staging": "eas update --branch staging --message",
     "update:production": "eas update --branch production --message"
   },
