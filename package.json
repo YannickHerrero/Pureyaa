@@ -23,7 +23,7 @@
     "expo-status-bar": "~2.0.0",
     "expo-video": "~2.0.1",
     "expo-video-thumbnails": "~9.0.2",
-    "kuromoji-react-native": "^0.1.5",
+    "kuromoji-react-native": "^1.0.1",
     "react": "18.3.1",
     "react-native": "0.76.3",
     "react-native-gesture-handler": "~2.20.2",
