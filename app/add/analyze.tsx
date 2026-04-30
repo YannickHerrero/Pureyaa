@@ -1,0 +1,270 @@
+import { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { runAnalysis, type ProgressEvent } from '@/analysis/orchestrator';
+import { getApiKey, getSettings } from '@/storage/settings';
+import {
+  analysisPathFor,
+  thumbnailPathFor,
+  upsertEntry,
+  writeAnalysisData,
+} from '@/storage/entries';
+import { extractThumbnail } from '@/utils/thumbnail';
+import type { LibraryEntry } from '@/types';
+import { DEFAULT_RETIMER } from '@/types';
+import { uuid } from '@/utils/uuid';
+
+type Phase = 'idle' | 'tokenizing' | 'translating' | 'finalizing' | 'done' | 'failed';
+
+interface ProgressState {
+  phase: Phase;
+  tokenized: number;
+  tokenizedTotal: number;
+  translated: number;
+  translatedTotal: number;
+  latestText: string;
+  error: string | null;
+}
+
+const INITIAL: ProgressState = {
+  phase: 'idle',
+  tokenized: 0,
+  tokenizedTotal: 0,
+  translated: 0,
+  translatedTotal: 0,
+  latestText: '',
+  error: null,
+};
+
+export default function AnalyzeScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{
+    videoUri: string;
+    videoName: string;
+    subtitleUri: string;
+    subtitleName: string;
+    title: string;
+    seriesName: string;
+    episodeNumber: string;
+  }>();
+  const [state, setState] = useState<ProgressState>(INITIAL);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const start = async () => {
+    setState({ ...INITIAL, phase: 'tokenizing' });
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    try {
+      const apiKey = await getApiKey();
+      if (!apiKey) throw new Error('Missing API key. Set it in Settings.');
+      const settings = await getSettings();
+
+      const data = await runAnalysis({
+        subtitleUri: params.subtitleUri,
+        apiKey,
+        model: settings.modelId,
+        signal: ctl.signal,
+        onProgress: (e: ProgressEvent) => {
+          setState((s) => {
+            if (e.phase === 'tokenizing') {
+              return {
+                ...s,
+                phase: 'tokenizing',
+                tokenized: e.processed,
+                tokenizedTotal: e.total,
+              };
+            }
+            return {
+              ...s,
+              phase: 'translating',
+              translated: e.translated,
+              translatedTotal: e.total,
+              latestText: e.latestText,
+            };
+          });
+        },
+      });
+
+      setState((s) => ({ ...s, phase: 'finalizing' }));
+
+      const id = uuid();
+      const analysisDataPath = await analysisPathFor(id);
+      await writeAnalysisData(analysisDataPath, data);
+
+      const thumbPath = await thumbnailPathFor(id);
+      let thumbnailPath = thumbPath;
+      let aspectRatio = 16 / 9;
+      let durationSeconds = 0;
+      try {
+        const lastCueEndMs = data.cues[data.cues.length - 1]?.endMs ?? 0;
+        const positionMs = Math.max(0, Math.floor(lastCueEndMs * 0.1));
+        const t = await extractThumbnail(params.videoUri, thumbPath, positionMs);
+        thumbnailPath = t.uri;
+        aspectRatio = t.width > 0 && t.height > 0 ? t.width / t.height : aspectRatio;
+        durationSeconds = Math.ceil(lastCueEndMs / 1000);
+      } catch {
+        // proceed with defaults
+      }
+
+      const ep = parseInt(params.episodeNumber ?? '', 10);
+      const entry: LibraryEntry = {
+        id,
+        title: params.title,
+        seriesName: (params.seriesName ?? '').length > 0 ? params.seriesName : null,
+        episodeNumber: Number.isFinite(ep) ? ep : null,
+        thumbnailPath,
+        durationSeconds,
+        videoAspectRatio: aspectRatio,
+        dateAddedISO: new Date().toISOString(),
+        lastWatchedISO: null,
+        watchProgressPercent: 0,
+        retimerState: { ...DEFAULT_RETIMER },
+        analysisState: 'completed',
+        analysisError: null,
+        modelUsed: settings.modelId,
+        videoUri: params.videoUri,
+        subtitleUri: params.subtitleUri,
+        analysisDataPath,
+      };
+      await upsertEntry(entry);
+
+      setState((s) => ({ ...s, phase: 'done' }));
+      // small delay so the user sees "done"
+      setTimeout(() => router.replace('/library'), 600);
+    } catch (e) {
+      setState((s) => ({ ...s, phase: 'failed', error: (e as Error).message }));
+    }
+  };
+
+  useEffect(() => {
+    start();
+    return () => abortRef.current?.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <View style={styles.root}>
+      <Stack.Screen options={{ title: 'Analyzing', headerShown: true }} />
+      <View style={styles.content}>
+        <PhaseRow
+          label="Tokenizing subtitles"
+          active={state.phase === 'tokenizing'}
+          done={
+            state.phase === 'translating' ||
+            state.phase === 'finalizing' ||
+            state.phase === 'done'
+          }
+          progress={state.tokenizedTotal > 0 ? state.tokenized / state.tokenizedTotal : 0}
+          right={
+            state.tokenizedTotal > 0
+              ? `${state.tokenized} / ${state.tokenizedTotal}`
+              : ''
+          }
+        />
+        <PhaseRow
+          label="Translating with Claude"
+          active={state.phase === 'translating'}
+          done={state.phase === 'finalizing' || state.phase === 'done'}
+          progress={
+            state.translatedTotal > 0 ? state.translated / state.translatedTotal : 0
+          }
+          right={
+            state.translatedTotal > 0
+              ? `${state.translated} / ${state.translatedTotal} lines`
+              : ''
+          }
+          subText={state.latestText}
+        />
+        {state.phase === 'finalizing' && (
+          <Text style={styles.finalize}>Saving entry…</Text>
+        )}
+        {state.phase === 'done' && (
+          <Text style={styles.success}>Done.</Text>
+        )}
+        {state.phase === 'failed' && state.error && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Analysis failed</Text>
+            <Text style={styles.errorBody}>{state.error}</Text>
+            <Pressable style={styles.retry} onPress={start}>
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function PhaseRow({
+  label,
+  active,
+  done,
+  progress,
+  right,
+  subText,
+}: {
+  label: string;
+  active: boolean;
+  done: boolean;
+  progress: number;
+  right: string;
+  subText?: string;
+}) {
+  const pct = Math.max(0, Math.min(1, progress));
+  return (
+    <View style={styles.phase}>
+      <View style={styles.phaseHead}>
+        <Text style={[styles.phaseLabel, !(active || done) && styles.phaseDim]}>
+          {done ? '✓ ' : ''}
+          {label}
+        </Text>
+        <View style={styles.phaseRight}>
+          {active && <ActivityIndicator color="#888" size="small" />}
+          <Text style={styles.phaseRightText}>{right}</Text>
+        </View>
+      </View>
+      <View style={styles.bar}>
+        <View style={[styles.barFill, { width: `${pct * 100}%` }]} />
+      </View>
+      {subText ? (
+        <Text style={styles.subText} numberOfLines={1}>
+          {subText}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#000' },
+  content: { padding: 24, gap: 24 },
+  phase: { gap: 8 },
+  phaseHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  phaseLabel: { color: '#fff', fontSize: 15, fontWeight: '500' },
+  phaseDim: { color: '#666' },
+  phaseRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  phaseRightText: { color: '#888', fontSize: 13 },
+  bar: { height: 6, backgroundColor: '#222', borderRadius: 3, overflow: 'hidden' },
+  barFill: { height: 6, backgroundColor: '#3b82f6' },
+  subText: { color: '#666', fontSize: 12 },
+  finalize: { color: '#888', textAlign: 'center', marginTop: 8 },
+  success: { color: '#4ade80', textAlign: 'center', marginTop: 8, fontSize: 16 },
+  errorBox: {
+    backgroundColor: '#181818',
+    borderRadius: 8,
+    padding: 16,
+    borderColor: '#7f1d1d',
+    borderWidth: 1,
+    gap: 12,
+  },
+  errorTitle: { color: '#f87171', fontWeight: '600', fontSize: 16 },
+  errorBody: { color: '#ddd', fontSize: 13 },
+  retry: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  retryText: { color: '#fff', fontWeight: '600' },
+});
