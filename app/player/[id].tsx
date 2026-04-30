@@ -25,8 +25,9 @@ import type { Cue, LibraryEntry, RetimerState, SubtitleMode } from '@/types';
 import { DEFAULT_SETTINGS } from '@/types';
 
 export default function PlayerScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, cueIndex } = useLocalSearchParams<{ id: string; cueIndex?: string }>();
   const result = usePlayerData(id!);
+  const initialCueIndex = cueIndex ? parseInt(cueIndex, 10) : null;
 
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
@@ -51,10 +52,16 @@ export default function PlayerScreen() {
       </View>
     );
   }
-  return <PlayerOrRelocate data={result.data} />;
+  return <PlayerOrRelocate data={result.data} initialCueIndex={initialCueIndex} />;
 }
 
-function PlayerOrRelocate({ data }: { data: { entry: LibraryEntry; analysis: import('@/types').AnalysisData } }) {
+function PlayerOrRelocate({
+  data,
+  initialCueIndex,
+}: {
+  data: { entry: LibraryEntry; analysis: import('@/types').AnalysisData };
+  initialCueIndex: number | null;
+}) {
   const [missing, setMissing] = useState<'video' | 'subtitle' | null | 'checking'>('checking');
   const [entry, setEntry] = useState<LibraryEntry>(data.entry);
 
@@ -91,7 +98,7 @@ function PlayerOrRelocate({ data }: { data: { entry: LibraryEntry; analysis: imp
     );
   }
 
-  return <Player data={{ entry, analysis: data.analysis }} />;
+  return <Player data={{ entry, analysis: data.analysis }} initialCueIndex={initialCueIndex} />;
 }
 
 function Relocate({
@@ -149,7 +156,13 @@ function Relocate({
   );
 }
 
-function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer R ? Extract<R, { state: 'ready' }>['data'] : never }) {
+function Player({
+  data,
+  initialCueIndex,
+}: {
+  data: ReturnType<typeof usePlayerData> extends infer R ? Extract<R, { state: 'ready' }>['data'] : never;
+  initialCueIndex: number | null;
+}) {
   const { width: screenWidth } = useWindowDimensions();
   const { entry, analysis } = data;
   const cues = analysis.cues;
@@ -246,6 +259,18 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const seekedToInitialRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (seekedToInitialRef.current) return;
+    if (initialCueIndex == null) return;
+    const target = cues.find((c) => c.index === initialCueIndex);
+    if (!target) return;
+    seekedToInitialRef.current = true;
+    const startSec = (target.startMs * retimer.scaleFactor + retimer.offsetMs) / 1000;
+    player.currentTime = Math.max(0, startSec);
+    player.pause();
+  }, [initialCueIndex, cues, retimer, player]);
 
   const aspect = entry.videoAspectRatio > 0 ? entry.videoAspectRatio : 16 / 9;
   const videoHeight = screenWidth / aspect;
