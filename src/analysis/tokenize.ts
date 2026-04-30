@@ -24,6 +24,61 @@ RNDictionaryLoader.prototype.loadArrayBuffer = function (
     .catch((err) => callback(err, null));
 };
 
+// kuromoji's TokenInfoDictionary builds target_map as a plain object with
+// ~250k integer keys. Hermes caps single objects at 196,607 properties, so
+// this either crashes or stalls during dictionary load. Replace with a Map
+// wrapped in a Proxy so existing target_map[trie_id] reads in ViterbiBuilder
+// continue to work without modification.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const TokenInfoDictionary = require('kuromoji-react-native/src/dict/TokenInfoDictionary');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ByteBuffer = require('kuromoji-react-native/src/util/ByteBuffer');
+
+function mapAsTargetMap(map: Map<number, number[]>): Map<number, number[]> {
+  return new Proxy(map, {
+    get(target, prop) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const own = (target as any)[prop];
+      if (typeof own === 'function') return own.bind(target);
+      if (own !== undefined) return own;
+      if (typeof prop === 'string') {
+        const n = Number(prop);
+        if (Number.isFinite(n)) return target.get(n);
+      }
+      return undefined;
+    },
+    set(target, prop, value) {
+      if (typeof prop === 'string') {
+        const n = Number(prop);
+        if (Number.isFinite(n)) {
+          target.set(n, value);
+          return true;
+        }
+      }
+      return false;
+    },
+  }) as unknown as Map<number, number[]>;
+}
+
+TokenInfoDictionary.prototype.loadTargetMap = function (array_buffer: ArrayBuffer) {
+  const buffer = new ByteBuffer(array_buffer);
+  buffer.position = 0;
+  const map = new Map<number, number[]>();
+  buffer.readInt(); // map_keys_size — informational, ignored
+  while (true) {
+    if (buffer.buffer.length < buffer.position + 1) break;
+    const key = buffer.readInt();
+    const valuesSize = buffer.readInt();
+    const values: number[] = new Array(valuesSize);
+    for (let i = 0; i < valuesSize; i++) {
+      values[i] = buffer.readInt();
+    }
+    map.set(key, values);
+  }
+  this.target_map = mapAsTargetMap(map);
+  return this;
+};
+
 interface KuromojiToken {
   surface_form: string;
   reading?: string;
