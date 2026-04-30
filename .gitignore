@@ -50,3 +50,6 @@ specs.md
 
 # Download cache (used by scripts/download-dicts.mjs)
 tmp/
+
+# Dictionary bundles — populated by `pnpm download-dicts`, ~200MB total
+assets/dict/*.dict

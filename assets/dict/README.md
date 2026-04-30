@@ -1,19 +1,18 @@
 # Dictionary data
 
-This directory holds the bundled JMdict + JMnedict data the app reads at runtime. The repo ships **tiny placeholders** (`{"index":{},"entries":{}}`) so the project builds without doing anything; populate them with real data via:
+This directory is where the bundled JMdict + JMnedict data lives at build time. The dict files (`jmdict.dict`, `jmnedict.dict`) are gitignored — populate them locally via:
 
 ```bash
-npm run download-dicts
+pnpm download-dicts
 ```
 
 That script:
 
 1. Downloads the latest `jmdict-eng-*.json.tgz` and `jmnedict-all-*.json.tgz` releases from [scriptin/jmdict-simplified](https://github.com/scriptin/jmdict-simplified) (EDRDG license).
 2. Extracts and converts each to the schema below.
-3. Overwrites `jmdict.json` + `jmnedict.json` here.
-4. Marks both files with `git update-index --skip-worktree` so the ~100 MB diffs don't show in `git status`.
+3. Writes `jmdict.dict` + `jmnedict.dict` here.
 
-If you ever want to update the placeholders (e.g. on a different machine), run `git update-index --no-skip-worktree assets/dict/{jmdict,jmnedict}.json` first.
+The `.dict` extension is registered as a binary asset in `metro.config.js`, so Metro ships these as native resources rather than inlining them as JS modules. `src/analysis/dict.ts` reads them via `expo-asset`.
 
 ## Schema (input to `src/analysis/dict.ts`)
 

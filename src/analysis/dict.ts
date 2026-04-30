@@ -1,14 +1,9 @@
+import { Asset } from 'expo-asset';
+import { File } from 'expo-file-system';
+import jmdictAsset from '../../assets/dict/jmdict.dict';
+import jmnedictAsset from '../../assets/dict/jmnedict.dict';
 import type { DictName } from '@/types';
 
-/**
- * Bundled-dictionary loader. The real JMDict / JMnedict are too large to
- * commit to the repo; the loader expects two index objects keyed by surface
- * form (or kana reading) → list of entry ids. The full entry payloads live
- * in a parallel object keyed by entry id.
- *
- * Drop the converted JSON at assets/dict/jmdict.json + jmnedict.json (see
- * README) and this module will pick them up.
- */
 export interface DictSenseExample {
   jpn?: string;
   eng?: string;
@@ -24,18 +19,15 @@ export interface DictSense {
 
 export interface DictEntry {
   id: number;
-  forms: string[]; // kanji + kana headwords
+  forms: string[];
   readings: string[];
   senses: DictSense[];
   frequency?: string;
-  // For JMnedict only:
-  nameType?: string[]; // person, place, organization, ...
+  nameType?: string[];
 }
 
 export interface DictBundle {
-  // Lookup index: form (or reading) → entry ids
   index: Record<string, number[]>;
-  // Entry id → full entry payload
   entries: Record<string, DictEntry>;
 }
 
@@ -45,18 +37,16 @@ let jmnedict: DictBundle | null = null;
 const EMPTY: DictBundle = { index: {}, entries: {} };
 
 export async function loadDictionaries(): Promise<void> {
-  if (!jmdict) jmdict = await tryLoad('jmdict');
-  if (!jmnedict) jmnedict = await tryLoad('jmnedict');
+  if (!jmdict) jmdict = await loadFromAsset(jmdictAsset);
+  if (!jmnedict) jmnedict = await loadFromAsset(jmnedictAsset);
 }
 
-async function tryLoad(name: DictName): Promise<DictBundle> {
+async function loadFromAsset(moduleId: number): Promise<DictBundle> {
   try {
-    if (name === 'jmdict') {
-      const mod = await import('../../assets/dict/jmdict.json');
-      return (mod as any).default ?? (mod as unknown as DictBundle);
-    }
-    const mod = await import('../../assets/dict/jmnedict.json');
-    return (mod as any).default ?? (mod as unknown as DictBundle);
+    const [asset] = await Asset.loadAsync(moduleId);
+    const uri = asset.localUri ?? asset.uri;
+    const text = await new File(uri).text();
+    return JSON.parse(text) as DictBundle;
   } catch {
     return EMPTY;
   }

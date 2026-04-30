@@ -3,10 +3,14 @@
 // convert them to the schema expected by src/analysis/dict.ts.
 //
 // Outputs:
-//   assets/dict/jmdict.json
-//   assets/dict/jmnedict.json
+//   assets/dict/jmdict.dict
+//   assets/dict/jmnedict.dict
 //
-// Both are gitignored. Run with: node scripts/download-dicts.mjs
+// Both are gitignored. The .dict extension is registered as a binary
+// asset in metro.config.js so Metro ships them as native resources
+// rather than inlining them as JS modules.
+//
+// Run with: node scripts/download-dicts.mjs
 //
 // Source: https://github.com/scriptin/jmdict-simplified
 // Format docs: https://scriptin.github.io/jmdict-simplified/
@@ -203,29 +207,13 @@ function safeExists(p) {
 await processOne({
   assetMatch: (n) => n.startsWith('jmdict-eng-') && !n.includes('-common-') && n.endsWith('.json.tgz'),
   kind: 'jmdict',
-  outFile: 'jmdict.json',
+  outFile: 'jmdict.dict',
 });
 
 await processOne({
   assetMatch: (n) => n.startsWith('jmnedict-all-') && n.endsWith('.json.tgz'),
   kind: 'jmnedict',
-  outFile: 'jmnedict.json',
+  outFile: 'jmnedict.dict',
 });
-
-// Tell git to ignore future modifications to the dict JSON. The repo ships
-// tiny placeholder JSONs so the project builds, but the files become huge
-// (~100MB) once real data is downloaded. Without this, every `git status`
-// would show massive diffs.
-try {
-  execFileSync('git', [
-    'update-index',
-    '--skip-worktree',
-    join(OUT, 'jmdict.json'),
-    join(OUT, 'jmnedict.json'),
-  ]);
-  console.log('\nMarked dict files with --skip-worktree (will not appear in git status).');
-} catch (e) {
-  console.warn('\nCould not mark dict files with --skip-worktree:', e.message);
-}
 
 console.log('Output dir:', OUT);
