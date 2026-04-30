@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import { usePlayerData } from '@/player/playerStore';
 import { SubtitlePane } from '@/player/SubtitlePane';
 import { DictPopup } from '@/player/DictPopup';
 import { Controls } from '@/player/Controls';
-import { findCueIndexAt } from '@/utils/time';
+import { effectiveEndMs, findCueIndexAt } from '@/utils/time';
 import { getSettings } from '@/storage/settings';
 import { loadDictionaries } from '@/analysis/dict';
 import type { Cue, SubtitleMode } from '@/types';
@@ -64,12 +64,15 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
   const [durationMs, setDurationMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [mode, setMode] = useState<SubtitleMode>(DEFAULT_SETTINGS.defaultSubtitleMode);
+  const [autoPause, setAutoPause] = useState<boolean>(DEFAULT_SETTINGS.autoPauseAtLineEnd);
   const [popup, setPopup] = useState<{ cue: Cue; tokenIndex: number } | null>(null);
+  const lastAutoPausedCueIndex = useRef<number>(-1);
 
   useEffect(() => {
     (async () => {
       const s = await getSettings();
       setMode(s.defaultSubtitleMode);
+      setAutoPause(s.autoPauseAtLineEnd);
       await loadDictionaries();
     })();
   }, []);
@@ -100,6 +103,21 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
     [cues, currentMs, entry.retimerState],
   );
   const currentCue = currentCueIndex >= 0 ? cues[currentCueIndex] : null;
+
+  useEffect(() => {
+    if (!autoPause || !isPlaying || !currentCue) return;
+    const endMs = effectiveEndMs(currentCue, entry.retimerState);
+    if (currentMs >= endMs - 30 && lastAutoPausedCueIndex.current !== currentCueIndex) {
+      lastAutoPausedCueIndex.current = currentCueIndex;
+      player.pause();
+    }
+  }, [autoPause, isPlaying, currentCue, currentCueIndex, currentMs, entry.retimerState, player]);
+
+  useEffect(() => {
+    // Cue changed (seek, natural progression). Clear the latch so the new
+    // cue can auto-pause when its own end is reached.
+    lastAutoPausedCueIndex.current = -1;
+  }, [currentCueIndex]);
 
   return (
     <View style={styles.root}>
