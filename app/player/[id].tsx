@@ -4,10 +4,12 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
+  Pressable,
   useWindowDimensions,
 } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import * as DocumentPicker from 'expo-document-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { usePlayerData } from '@/player/playerStore';
 import { SubtitlePane } from '@/player/SubtitlePane';
@@ -17,8 +19,9 @@ import { RetimerModal } from '@/player/RetimerModal';
 import { effectiveEndMs, findCueIndexAt } from '@/utils/time';
 import { getSettings } from '@/storage/settings';
 import { loadDictionaries } from '@/analysis/dict';
-import { upsertEntry } from '@/storage/entries';
-import type { Cue, RetimerState, SubtitleMode } from '@/types';
+import { deleteEntry, upsertEntry } from '@/storage/entries';
+import { uriExists } from '@/utils/uriCheck';
+import type { Cue, LibraryEntry, RetimerState, SubtitleMode } from '@/types';
 import { DEFAULT_SETTINGS } from '@/types';
 
 export default function PlayerScreen() {
@@ -48,7 +51,102 @@ export default function PlayerScreen() {
       </View>
     );
   }
-  return <Player data={result.data} />;
+  return <PlayerOrRelocate data={result.data} />;
+}
+
+function PlayerOrRelocate({ data }: { data: { entry: LibraryEntry; analysis: import('@/types').AnalysisData } }) {
+  const [missing, setMissing] = useState<'video' | 'subtitle' | null | 'checking'>('checking');
+  const [entry, setEntry] = useState<LibraryEntry>(data.entry);
+
+  useEffect(() => {
+    (async () => {
+      const [v, s] = await Promise.all([
+        uriExists(entry.videoUri),
+        uriExists(entry.subtitleUri),
+      ]);
+      if (!v) setMissing('video');
+      else if (!s) setMissing('subtitle');
+      else setMissing(null);
+    })();
+  }, [entry.videoUri, entry.subtitleUri]);
+
+  if (missing === 'checking') {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color="#fff" />
+      </View>
+    );
+  }
+
+  if (missing === 'video' || missing === 'subtitle') {
+    return (
+      <Relocate
+        entry={entry}
+        which={missing}
+        onRelocated={(updated) => {
+          setEntry(updated);
+          setMissing('checking');
+        }}
+      />
+    );
+  }
+
+  return <Player data={{ entry, analysis: data.analysis }} />;
+}
+
+function Relocate({
+  entry,
+  which,
+  onRelocated,
+}: {
+  entry: LibraryEntry;
+  which: 'video' | 'subtitle';
+  onRelocated: (e: LibraryEntry) => void;
+}) {
+  const router = useRouter();
+  const label = which === 'video' ? 'video' : 'subtitle';
+  const [busy, setBusy] = useState(false);
+
+  const onPick = async () => {
+    setBusy(true);
+    try {
+      const r = await DocumentPicker.getDocumentAsync({
+        type: which === 'video' ? 'video/*' : ['application/x-subrip', 'text/plain', '*/*'],
+        copyToCacheDirectory: which === 'subtitle',
+      });
+      if (r.canceled) return;
+      const uri = r.assets[0].uri;
+      const updated: LibraryEntry =
+        which === 'video' ? { ...entry, videoUri: uri } : { ...entry, subtitleUri: uri };
+      await upsertEntry(updated);
+      onRelocated(updated);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDelete = async () => {
+    await deleteEntry(entry.id);
+    router.replace('/library');
+  };
+
+  return (
+    <View style={styles.relocate}>
+      <Stack.Screen options={{ title: 'File missing', headerShown: true }} />
+      <Text style={styles.relocateTitle}>The {label} file for this entry is no longer accessible.</Text>
+      <Text style={styles.relocateBody}>
+        Analysis data is preserved. Re-locate the file to restore playback, or delete the entry.
+      </Text>
+      <View style={styles.relocateButtons}>
+        <Pressable style={[styles.relocateBtn, styles.relocateBtnPrimary]} onPress={onPick} disabled={busy}>
+          <Text style={styles.relocateBtnText}>Re-locate {label}</Text>
+        </Pressable>
+        <Pressable style={styles.relocateBtn} onPress={onDelete} disabled={busy}>
+          <Text style={[styles.relocateBtnText, styles.destructive]}>Delete entry</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
 function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer R ? Extract<R, { state: 'ready' }>['data'] : never }) {
@@ -237,4 +335,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0a0a0a',
   },
+  relocate: {
+    flex: 1,
+    backgroundColor: '#000',
+    padding: 24,
+    gap: 16,
+    justifyContent: 'center',
+  },
+  relocateTitle: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  relocateBody: { color: '#aaa', fontSize: 14, lineHeight: 20 },
+  relocateButtons: { gap: 8, marginTop: 16 },
+  relocateBtn: {
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 14,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  relocateBtnPrimary: { backgroundColor: '#3b82f6' },
+  relocateBtnText: { color: '#fff', fontWeight: '600' },
+  destructive: { color: '#f87171' },
 });

@@ -16,6 +16,7 @@ import { isWatched, type LibraryEntry } from '@/types';
 import { formatHMS } from '@/utils/time';
 import { EntryContextMenu } from '@/library/EntryContextMenu';
 import { SeriesContextMenu } from '@/library/SeriesContextMenu';
+import { uriExists } from '@/utils/uriCheck';
 
 const SORT_LABELS: Record<SortKey, string> = {
   dateAdded: 'Newest',
@@ -35,9 +36,22 @@ export default function LibraryScreen() {
   const [entryMenu, setEntryMenu] = useState<LibraryEntry | null>(null);
   const [seriesMenu, setSeriesMenu] = useState<{ name: string; entries: LibraryEntry[] } | null>(null);
 
+  const [unavailable, setUnavailable] = useState<Record<string, boolean>>({});
+
   const reload = useCallback(async () => {
     const e = await listEntries();
     setEntries(e);
+    const map: Record<string, boolean> = {};
+    await Promise.all(
+      e.map(async (entry) => {
+        const [v, s] = await Promise.all([
+          uriExists(entry.videoUri),
+          uriExists(entry.subtitleUri),
+        ]);
+        if (!v || !s) map[entry.id] = true;
+      }),
+    );
+    setUnavailable(map);
   }, []);
 
   useEffect(() => {
@@ -98,6 +112,7 @@ export default function LibraryScreen() {
               key={it.kind === 'series' ? `series:${it.name}` : `entry:${it.entry.id}`}
               item={it}
               expanded={it.kind === 'series' ? !!expanded[it.name] : false}
+              unavailable={unavailable}
               onToggleExpand={
                 it.kind === 'series'
                   ? () => setExpanded((p) => ({ ...p, [it.name]: !p[it.name] }))
@@ -129,6 +144,7 @@ export default function LibraryScreen() {
 function ItemRow({
   item,
   expanded,
+  unavailable,
   onToggleExpand,
   onOpenEntry,
   onLongPressEntry,
@@ -136,6 +152,7 @@ function ItemRow({
 }: {
   item: GroupedItem;
   expanded: boolean;
+  unavailable: Record<string, boolean>;
   onToggleExpand?: () => void;
   onOpenEntry: (e: LibraryEntry) => void;
   onLongPressEntry: (e: LibraryEntry) => void;
@@ -145,6 +162,7 @@ function ItemRow({
     return (
       <EntryTile
         entry={item.entry}
+        unavailable={!!unavailable[item.entry.id]}
         onPress={() => onOpenEntry(item.entry)}
         onLongPress={() => onLongPressEntry(item.entry)}
       />
@@ -167,6 +185,7 @@ function ItemRow({
             <EntryTile
               key={e.id}
               entry={e}
+              unavailable={!!unavailable[e.id]}
               onPress={() => onOpenEntry(e)}
               onLongPress={() => onLongPressEntry(e)}
               indented
@@ -180,11 +199,13 @@ function ItemRow({
 
 function EntryTile({
   entry,
+  unavailable,
   onPress,
   onLongPress,
   indented,
 }: {
   entry: LibraryEntry;
+  unavailable?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
   indented?: boolean;
@@ -211,6 +232,7 @@ function EntryTile({
           {formatHMS(entry.durationSeconds)} · {Math.round(entry.watchProgressPercent)}%
           {isWatched(entry) ? ' · watched' : ''}
         </Text>
+        {unavailable && <Text style={styles.unavailable}>file unavailable — tap to re-locate</Text>}
       </View>
     </Pressable>
   );
@@ -268,4 +290,5 @@ const styles = StyleSheet.create({
   tileBody: { flex: 1, padding: 10, justifyContent: 'center' },
   tileTitle: { color: '#fff', fontSize: 15 },
   tileMeta: { color: '#888', fontSize: 12, marginTop: 4 },
+  unavailable: { color: '#f59e0b', fontSize: 11, marginTop: 4, fontStyle: 'italic' },
 });
