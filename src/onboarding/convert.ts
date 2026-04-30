@@ -47,19 +47,19 @@ function pickEnglishTranslation(items: RawGloss[]): string[] {
   return (eng.length > 0 ? eng : items).map((t) => t.text);
 }
 
-function pushIndex(index: Record<string, number[]>, key: string, id: number): void {
+function pushIndex(index: Map<string, number[]>, key: string, id: number): void {
   if (!key) return;
-  const list = index[key];
+  const list = index.get(key);
   if (list) {
     if (!list.includes(id)) list.push(id);
   } else {
-    index[key] = [id];
+    index.set(key, [id]);
   }
 }
 
 export function convertJmdict(words: RawJmdictWord[]): DictBundle {
-  const index: Record<string, number[]> = Object.create(null);
-  const entries: Record<string, DictEntry> = Object.create(null);
+  const index = new Map<string, number[]>();
+  const entries = new Map<number, DictEntry>();
 
   for (const w of words) {
     const id = Number(w.id);
@@ -82,7 +82,7 @@ export function convertJmdict(words: RawJmdictWord[]): DictBundle {
     const entry: DictEntry = { id, forms, readings, senses };
     if (isCommon) entry.frequency = 'common';
 
-    entries[id] = entry;
+    entries.set(id, entry);
     for (const f of forms) pushIndex(index, f, id);
     for (const r of readings) pushIndex(index, r, id);
   }
@@ -91,8 +91,8 @@ export function convertJmdict(words: RawJmdictWord[]): DictBundle {
 }
 
 export function convertJmnedict(words: RawJmnedictWord[]): DictBundle {
-  const index: Record<string, number[]> = Object.create(null);
-  const entries: Record<string, DictEntry> = Object.create(null);
+  const index = new Map<string, number[]>();
+  const entries = new Map<number, DictEntry>();
 
   for (const w of words) {
     const id = Number(w.id);
@@ -115,7 +115,7 @@ export function convertJmnedict(words: RawJmnedictWord[]): DictBundle {
     const entry: DictEntry = { id, forms, readings, senses };
     if (nameTypes.size > 0) entry.nameType = Array.from(nameTypes);
 
-    entries[id] = entry;
+    entries.set(id, entry);
     for (const f of forms) pushIndex(index, f, id);
     for (const r of readings) pushIndex(index, r, id);
   }

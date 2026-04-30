@@ -1,4 +1,5 @@
 import pako from 'pako';
+import { serializeBundle } from '@/analysis/dict';
 import { convertJmdict, convertJmnedict } from './convert';
 import { extractFirstFile } from './tar';
 import { DICT_DIR, JMDICT_FILE, JMNEDICT_FILE } from './state';
@@ -74,7 +75,7 @@ export async function installDictionaries(
   const jmdictRaw = JSON.parse(tgzToJsonText(jmdictTgz)) as { words?: unknown[] };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const jmdictBundle = convertJmdict((jmdictRaw.words ?? []) as any[]);
-  JMDICT_FILE.write(JSON.stringify(jmdictBundle));
+  JMDICT_FILE.write(JSON.stringify(serializeBundle(jmdictBundle)));
 
   const jmnedictAsset = findAsset(
     release,
@@ -86,7 +87,7 @@ export async function installDictionaries(
   const jmnedictRaw = JSON.parse(tgzToJsonText(jmnedictTgz)) as { words?: unknown[] };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const jmnedictBundle = convertJmnedict((jmnedictRaw.words ?? []) as any[]);
-  JMNEDICT_FILE.write(JSON.stringify(jmnedictBundle));
+  JMNEDICT_FILE.write(JSON.stringify(serializeBundle(jmnedictBundle)));
 
   onProgress?.({ stage: 'done' });
 }
