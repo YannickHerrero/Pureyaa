@@ -1,7 +1,5 @@
-import { Asset } from 'expo-asset';
-import { File } from 'expo-file-system';
-import jmdictAsset from '../../assets/dict/jmdict.dict';
-import jmnedictAsset from '../../assets/dict/jmnedict.dict';
+import type { File } from 'expo-file-system';
+import { JMDICT_FILE, JMNEDICT_FILE } from '@/onboarding/state';
 import type { DictName } from '@/types';
 
 export interface DictSenseExample {
@@ -36,20 +34,19 @@ let jmnedict: DictBundle | null = null;
 
 const EMPTY: DictBundle = { index: {}, entries: {} };
 
-export async function loadDictionaries(): Promise<void> {
-  if (!jmdict) jmdict = await loadFromAsset(jmdictAsset);
-  if (!jmnedict) jmnedict = await loadFromAsset(jmnedictAsset);
-}
-
-async function loadFromAsset(moduleId: number): Promise<DictBundle> {
+async function loadFromFile(file: File): Promise<DictBundle> {
   try {
-    const [asset] = await Asset.loadAsync(moduleId);
-    const uri = asset.localUri ?? asset.uri;
-    const text = await new File(uri).text();
+    if (!file.exists) return EMPTY;
+    const text = await file.text();
     return JSON.parse(text) as DictBundle;
   } catch {
     return EMPTY;
   }
+}
+
+export async function loadDictionaries(): Promise<void> {
+  if (!jmdict) jmdict = await loadFromFile(JMDICT_FILE);
+  if (!jmnedict) jmnedict = await loadFromFile(JMNEDICT_FILE);
 }
 
 export function lookup(form: string, dict: DictName): number[] {
