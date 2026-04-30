@@ -1,14 +1,225 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  Pressable,
+  ScrollView,
+  Switch,
+  ActivityIndicator,
+} from 'react-native';
+import type { AppSettings, ModelId, SubtitleMode } from '@/types';
+import { DEFAULT_SETTINGS } from '@/types';
+import {
+  getSettings,
+  saveSettings,
+  getApiKey,
+  setApiKey,
+  clearApiKey,
+} from '@/storage/settings';
+import { testApiKey } from '@/analysis/claude';
+
+const MODELS: ModelId[] = ['haiku', 'sonnet', 'opus'];
+const SUB_MODES: SubtitleMode[] = ['jp', 'jp+en', 'en'];
+
+const MODE_LABELS: Record<SubtitleMode, string> = {
+  jp: 'JP only',
+  'jp+en': 'JP + EN',
+  en: 'EN only',
+};
 
 export default function SettingsScreen() {
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [apiKey, setApiKeyState] = useState<string>('');
+  const [keyDirty, setKeyDirty] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const [s, k] = await Promise.all([getSettings(), getApiKey()]);
+      setSettings(s);
+      setApiKeyState(k ?? '');
+      setLoaded(true);
+    })();
+  }, []);
+
+  const update = async (patch: Partial<AppSettings>) => {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    await saveSettings(next);
+  };
+
+  const onSaveKey = async () => {
+    const trimmed = apiKey.trim();
+    if (trimmed.length === 0) {
+      await clearApiKey();
+    } else {
+      await setApiKey(trimmed);
+    }
+    setKeyDirty(false);
+    setTestResult(null);
+  };
+
+  const onTest = async () => {
+    if (!loaded || apiKey.trim().length === 0) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const trimmed = apiKey.trim();
+      if (keyDirty) await setApiKey(trimmed);
+      await testApiKey(trimmed, settings.modelId);
+      setKeyDirty(false);
+      setTestResult({ ok: true, message: 'Connection successful' });
+    } catch (e) {
+      setTestResult({ ok: false, message: (e as Error).message });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  if (!loaded) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color="#fff" />
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.placeholder}>Settings</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Section title="LLM configuration">
+        <Label>Anthropic API key</Label>
+        <TextInput
+          value={apiKey}
+          onChangeText={(t) => {
+            setApiKeyState(t);
+            setKeyDirty(true);
+          }}
+          placeholder="sk-ant-..."
+          placeholderTextColor="#666"
+          secureTextEntry
+          style={styles.input}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <View style={styles.row}>
+          <Pressable
+            style={[styles.button, !keyDirty && styles.buttonDisabled]}
+            disabled={!keyDirty}
+            onPress={onSaveKey}
+          >
+            <Text style={styles.buttonText}>Save</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.button, (testing || apiKey.trim().length === 0) && styles.buttonDisabled]}
+            disabled={testing || apiKey.trim().length === 0}
+            onPress={onTest}
+          >
+            <Text style={styles.buttonText}>{testing ? 'Testing…' : 'Test connection'}</Text>
+          </Pressable>
+        </View>
+        {testResult && (
+          <Text style={[styles.testResult, testResult.ok ? styles.ok : styles.bad]}>
+            {testResult.ok ? '✓ ' : '✗ '}
+            {testResult.message}
+          </Text>
+        )}
+
+        <Label>Model</Label>
+        <View style={styles.choiceRow}>
+          {MODELS.map((m) => (
+            <Pressable
+              key={m}
+              style={[styles.choice, settings.modelId === m && styles.choiceActive]}
+              onPress={() => update({ modelId: m })}
+            >
+              <Text style={styles.choiceText}>{m}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Section>
+
+      <Section title="Playback">
+        <View style={styles.toggleRow}>
+          <Text style={styles.toggleLabel}>Auto-pause at end of subtitle line</Text>
+          <Switch
+            value={settings.autoPauseAtLineEnd}
+            onValueChange={(v) => update({ autoPauseAtLineEnd: v })}
+          />
+        </View>
+        <Label>Default subtitle mode</Label>
+        <View style={styles.choiceRow}>
+          {SUB_MODES.map((m) => (
+            <Pressable
+              key={m}
+              style={[styles.choice, settings.defaultSubtitleMode === m && styles.choiceActive]}
+              onPress={() => update({ defaultSubtitleMode: m })}
+            >
+              <Text style={styles.choiceText}>{MODE_LABELS[m]}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Section>
+    </ScrollView>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {children}
     </View>
   );
 }
 
+function Label({ children }: { children: React.ReactNode }) {
+  return <Text style={styles.label}>{children}</Text>;
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-  placeholder: { color: '#888' },
+  container: { flex: 1, backgroundColor: '#000' },
+  content: { padding: 16, gap: 24 },
+  loading: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
+  section: { gap: 8 },
+  sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '600', marginBottom: 4 },
+  label: { color: '#aaa', fontSize: 13, marginTop: 8 },
+  input: {
+    backgroundColor: '#181818',
+    color: '#fff',
+    borderRadius: 6,
+    padding: 12,
+    fontSize: 15,
+  },
+  row: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  button: {
+    backgroundColor: '#222',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  buttonDisabled: { opacity: 0.5 },
+  buttonText: { color: '#fff', fontWeight: '500' },
+  testResult: { marginTop: 8, fontSize: 13 },
+  ok: { color: '#4ade80' },
+  bad: { color: '#f87171' },
+  choiceRow: { flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' },
+  choice: {
+    backgroundColor: '#181818',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  choiceActive: { backgroundColor: '#3b82f6' },
+  choiceText: { color: '#fff', textTransform: 'capitalize' },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  toggleLabel: { color: '#fff', fontSize: 15, flex: 1, marginRight: 12 },
 });
