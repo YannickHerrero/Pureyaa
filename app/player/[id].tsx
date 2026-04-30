@@ -11,8 +11,11 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { usePlayerData } from '@/player/playerStore';
+import { SubtitlePane } from '@/player/SubtitlePane';
 import { findCueIndexAt } from '@/utils/time';
-import type { Cue, RetimerState } from '@/types';
+import { getSettings } from '@/storage/settings';
+import type { SubtitleMode } from '@/types';
+import { DEFAULT_SETTINGS } from '@/types';
 
 export default function PlayerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -57,6 +60,14 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
 
   const [currentMs, setCurrentMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [mode, setMode] = useState<SubtitleMode>(DEFAULT_SETTINGS.defaultSubtitleMode);
+
+  useEffect(() => {
+    (async () => {
+      const s = await getSettings();
+      setMode(s.defaultSubtitleMode);
+    })();
+  }, []);
 
   useEffect(() => {
     const sub = player.addListener('timeUpdate', (e) => {
@@ -92,25 +103,9 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
         />
       </View>
       <View style={styles.subtitleArea}>
-        <SubtitlePane cue={currentCue} retimer={entry.retimerState} />
+        <SubtitlePane cue={currentCue} mode={mode} />
       </View>
       <BasicControls player={player} isPlaying={isPlaying} />
-    </View>
-  );
-}
-
-function SubtitlePane({ cue }: { cue: Cue | null; retimer: RetimerState }) {
-  if (!cue) {
-    return (
-      <View style={styles.cueBox}>
-        <Text style={styles.placeholder}>—</Text>
-      </View>
-    );
-  }
-  return (
-    <View style={styles.cueBox}>
-      <Text style={styles.cueText}>{cue.text}</Text>
-      {cue.translation ? <Text style={styles.translation}>{cue.translation}</Text> : null}
     </View>
   );
 }
@@ -147,13 +142,7 @@ const styles = StyleSheet.create({
   subtitleArea: {
     flex: 1,
     backgroundColor: '#0a0a0a',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
   },
-  cueBox: { gap: 8 },
-  cueText: { color: '#fff', fontSize: 22, lineHeight: 32 },
-  translation: { color: '#aaa', fontSize: 15, lineHeight: 22 },
-  placeholder: { color: '#444' },
   controls: {
     position: 'absolute',
     right: 16,
