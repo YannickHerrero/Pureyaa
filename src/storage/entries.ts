@@ -1,16 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import type { AnalysisData, LibraryEntry } from '@/types';
 import { STORAGE_KEYS } from './keys';
 
-const ANALYSIS_DIR = `${FileSystem.documentDirectory ?? ''}analysis/`;
-const THUMB_DIR = `${FileSystem.documentDirectory ?? ''}thumbnails/`;
+const ANALYSIS_DIR = new Directory(Paths.document, 'analysis');
+const THUMB_DIR = new Directory(Paths.document, 'thumbnails');
 
-async function ensureDir(path: string): Promise<void> {
-  const info = await FileSystem.getInfoAsync(path);
-  if (!info.exists) {
-    await FileSystem.makeDirectoryAsync(path, { intermediates: true });
-  }
+function ensureDir(dir: Directory): void {
+  if (!dir.exists) dir.create({ intermediates: true });
 }
 
 export async function listEntries(): Promise<LibraryEntry[]> {
@@ -45,34 +42,36 @@ export async function deleteEntry(id: string): Promise<void> {
   const entry = all.find((e) => e.id === id);
   await saveEntries(all.filter((e) => e.id !== id));
   if (entry) {
-    await safeDelete(entry.analysisDataPath);
-    await safeDelete(entry.thumbnailPath);
+    safeDelete(entry.analysisDataPath);
+    safeDelete(entry.thumbnailPath);
   }
 }
 
-async function safeDelete(path: string): Promise<void> {
+function safeDelete(path: string): void {
   if (!path) return;
   try {
-    const info = await FileSystem.getInfoAsync(path);
-    if (info.exists) await FileSystem.deleteAsync(path, { idempotent: true });
+    const file = new File(path);
+    if (file.exists) file.delete();
   } catch {
     // ignore — best effort
   }
 }
 
 export async function analysisPathFor(entryId: string): Promise<string> {
-  await ensureDir(ANALYSIS_DIR);
-  return `${ANALYSIS_DIR}${entryId}.json`;
+  ensureDir(ANALYSIS_DIR);
+  return new File(ANALYSIS_DIR, `${entryId}.json`).uri;
 }
 
 export async function thumbnailPathFor(entryId: string): Promise<string> {
-  await ensureDir(THUMB_DIR);
-  return `${THUMB_DIR}${entryId}.jpg`;
+  ensureDir(THUMB_DIR);
+  return new File(THUMB_DIR, `${entryId}.jpg`).uri;
 }
 
 export async function readAnalysisData(path: string): Promise<AnalysisData | null> {
   try {
-    const raw = await FileSystem.readAsStringAsync(path);
+    const file = new File(path);
+    if (!file.exists) return null;
+    const raw = await file.text();
     return JSON.parse(raw) as AnalysisData;
   } catch {
     return null;
@@ -80,5 +79,5 @@ export async function readAnalysisData(path: string): Promise<AnalysisData | nul
 }
 
 export async function writeAnalysisData(path: string, data: AnalysisData): Promise<void> {
-  await FileSystem.writeAsStringAsync(path, JSON.stringify(data));
+  new File(path).write(JSON.stringify(data));
 }

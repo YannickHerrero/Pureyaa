@@ -1,5 +1,5 @@
 import * as VideoThumbnails from 'expo-video-thumbnails';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 
 export interface ThumbnailResult {
   uri: string;
@@ -26,6 +26,6 @@ export async function extractThumbnail(
     time: positionMs,
     quality: 0.7,
   });
-  await FileSystem.copyAsync({ from: uri, to: destPath });
+  new File(uri).copy(new File(destPath));
   return { uri: destPath, width, height };
 }

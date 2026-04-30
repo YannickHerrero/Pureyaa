@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import type { AnalysisData, Cue, ModelId } from '@/types';
 import { parseSrt } from './srt';
 import { tokenize } from './tokenize';
@@ -27,7 +27,7 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisData> {
   const { subtitleUri, apiKey, model, onProgress, signal } = opts;
 
   // Step 1: read + parse SRT
-  const srtText = await FileSystem.readAsStringAsync(subtitleUri);
+  const srtText = await new File(subtitleUri).text();
   const rawCues = parseSrt(srtText);
   if (rawCues.length === 0) {
     throw new Error('No cues found in subtitle file.');

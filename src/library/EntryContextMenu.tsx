@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, View, Text, Pressable, StyleSheet, TextInput, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import type { LibraryEntry } from '@/types';
 import { upsertEntry, deleteEntry } from '@/storage/entries';
 import { extractThumbnail } from '@/utils/thumbnail';
@@ -58,7 +58,7 @@ export function EntryContextMenu({
     const r = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
     if (r.canceled) return;
     const dest = await thumbnailPathFor(entry.id);
-    await FileSystem.copyAsync({ from: r.assets[0].uri, to: dest });
+    new File(r.assets[0].uri).copy(new File(dest));
     await upsertEntry({ ...entry, thumbnailPath: dest });
     onChanged();
     close();
