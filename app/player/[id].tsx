@@ -13,10 +13,12 @@ import { usePlayerData } from '@/player/playerStore';
 import { SubtitlePane } from '@/player/SubtitlePane';
 import { DictPopup } from '@/player/DictPopup';
 import { Controls } from '@/player/Controls';
+import { RetimerModal } from '@/player/RetimerModal';
 import { effectiveEndMs, findCueIndexAt } from '@/utils/time';
 import { getSettings } from '@/storage/settings';
 import { loadDictionaries } from '@/analysis/dict';
-import type { Cue, SubtitleMode } from '@/types';
+import { upsertEntry } from '@/storage/entries';
+import type { Cue, RetimerState, SubtitleMode } from '@/types';
 import { DEFAULT_SETTINGS } from '@/types';
 
 export default function PlayerScreen() {
@@ -66,7 +68,14 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
   const [mode, setMode] = useState<SubtitleMode>(DEFAULT_SETTINGS.defaultSubtitleMode);
   const [autoPause, setAutoPause] = useState<boolean>(DEFAULT_SETTINGS.autoPauseAtLineEnd);
   const [popup, setPopup] = useState<{ cue: Cue; tokenIndex: number } | null>(null);
+  const [retimerOpen, setRetimerOpen] = useState(false);
+  const [retimer, setRetimer] = useState<RetimerState>(entry.retimerState);
   const lastAutoPausedCueIndex = useRef<number>(-1);
+
+  const onApplyRetimer = async (next: RetimerState) => {
+    setRetimer(next);
+    await upsertEntry({ ...entry, retimerState: next });
+  };
 
   useEffect(() => {
     (async () => {
@@ -99,19 +108,19 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
   const videoHeight = screenWidth / aspect;
 
   const currentCueIndex = useMemo(
-    () => findCueIndexAt(cues, currentMs, entry.retimerState),
-    [cues, currentMs, entry.retimerState],
+    () => findCueIndexAt(cues, currentMs, retimer),
+    [cues, currentMs, retimer],
   );
   const currentCue = currentCueIndex >= 0 ? cues[currentCueIndex] : null;
 
   useEffect(() => {
     if (!autoPause || !isPlaying || !currentCue) return;
-    const endMs = effectiveEndMs(currentCue, entry.retimerState);
+    const endMs = effectiveEndMs(currentCue, retimer);
     if (currentMs >= endMs - 30 && lastAutoPausedCueIndex.current !== currentCueIndex) {
       lastAutoPausedCueIndex.current = currentCueIndex;
       player.pause();
     }
-  }, [autoPause, isPlaying, currentCue, currentCueIndex, currentMs, entry.retimerState, player]);
+  }, [autoPause, isPlaying, currentCue, currentCueIndex, currentMs, retimer, player]);
 
   useEffect(() => {
     // Cue changed (seek, natural progression). Clear the latch so the new
@@ -145,12 +154,23 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
         currentMs={currentMs}
         durationMs={durationMs > 0 ? durationMs : entry.durationSeconds * 1000}
         cues={cues}
-        retimer={entry.retimerState}
+        retimer={retimer}
         currentCueIndex={currentCueIndex}
         onPlayPause={() => (isPlaying ? player.pause() : player.play())}
         onSeekMs={(ms) => {
           player.currentTime = ms / 1000;
         }}
+        onOpenRetimer={() => {
+          player.pause();
+          setRetimerOpen(true);
+        }}
+      />
+      <RetimerModal
+        visible={retimerOpen}
+        currentMs={currentMs}
+        retimer={retimer}
+        onApply={onApplyRetimer}
+        onClose={() => setRetimerOpen(false)}
       />
       <DictPopup
         visible={popup !== null}
