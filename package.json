@@ -23,7 +23,7 @@
     "expo-screen-orientation": "~8.0.0",
     "expo-secure-store": "~14.0.0",
     "expo-status-bar": "~2.0.0",
-    "expo-updates": "^55.0.21",
+    "expo-updates": "~0.27.5",
     "expo-video": "~2.0.1",
     "expo-video-thumbnails": "~9.0.2",
     "kuromoji-react-native": "^1.0.1",
