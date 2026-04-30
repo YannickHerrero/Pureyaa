@@ -1,0 +1,267 @@
+import { useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Modal,
+} from 'react-native';
+import type { Cue, DictMatch, SavedWord } from '@/types';
+import { getEntries, type DictEntry } from '@/analysis/dict';
+import { uuid } from '@/utils/uuid';
+import { addSavedWord } from '@/storage/savedWords';
+
+export interface DictPopupProps {
+  visible: boolean;
+  cue: Cue | null;
+  tokenIndex: number;
+  sourceEntryId: string;
+  onClose: () => void;
+}
+
+export function DictPopup({
+  visible,
+  cue,
+  tokenIndex,
+  sourceEntryId,
+  onClose,
+}: DictPopupProps) {
+  const matches = cue?.matchesByTokenIndex[tokenIndex] ?? [];
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  const tappedWord = useMemo(() => {
+    if (!cue) return '';
+    const t = cue.tokens[tokenIndex];
+    return t?.surface ?? '';
+  }, [cue, tokenIndex]);
+
+  // Reset to longest match when cue or token changes
+  useMemo(() => {
+    setActiveIdx(0);
+  }, [cue?.index, tokenIndex]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={styles.popup} onPress={() => {}}>
+          <View style={styles.header}>
+            <Text style={styles.tappedWord}>{tappedWord}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Text style={styles.close}>✕</Text>
+            </Pressable>
+          </View>
+
+          {matches.length === 0 ? (
+            <Text style={styles.noMatch}>No dictionary match.</Text>
+          ) : (
+            <>
+              <MatchTabs
+                matches={matches}
+                active={activeIdx}
+                onSelect={setActiveIdx}
+              />
+              <ScrollView style={styles.body}>
+                <MatchView
+                  match={matches[activeIdx]}
+                  cue={cue}
+                  sourceEntryId={sourceEntryId}
+                />
+              </ScrollView>
+            </>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function MatchTabs({
+  matches,
+  active,
+  onSelect,
+}: {
+  matches: DictMatch[];
+  active: number;
+  onSelect: (i: number) => void;
+}) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabs}>
+      {matches.map((m, i) => {
+        const len = m.tokenSpan[1] - m.tokenSpan[0] + 1;
+        const label = `${m.form} (${len}, ${m.dict === 'jmdict' ? 'JMDict' : 'JMnedict'})`;
+        return (
+          <Pressable
+            key={`${m.dict}-${m.form}-${i}`}
+            style={[styles.tab, active === i && styles.tabActive]}
+            onPress={() => onSelect(i)}
+          >
+            <Text style={styles.tabText}>{label}</Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+function MatchView({
+  match,
+  cue,
+  sourceEntryId,
+}: {
+  match: DictMatch;
+  cue: Cue | null;
+  sourceEntryId: string;
+}) {
+  const entries = getEntries(match.entryIds, match.dict);
+  if (entries.length === 0) {
+    return <Text style={styles.noMatch}>Dictionary entry missing for this id.</Text>;
+  }
+  return (
+    <View style={styles.entries}>
+      {entries.map((e) => (
+        <DictEntryView
+          key={e.id}
+          entry={e}
+          dict={match.dict}
+          cue={cue}
+          sourceEntryId={sourceEntryId}
+        />
+      ))}
+    </View>
+  );
+}
+
+function DictEntryView({
+  entry,
+  dict,
+  cue,
+  sourceEntryId,
+}: {
+  entry: DictEntry;
+  dict: 'jmdict' | 'jmnedict';
+  cue: Cue | null;
+  sourceEntryId: string;
+}) {
+  const [saved, setSaved] = useState(false);
+  const surface = entry.forms[0] ?? entry.readings[0] ?? '';
+  const reading = entry.readings[0] ?? '';
+  const lemma = entry.forms[0];
+
+  const onSave = async () => {
+    if (!cue || saved) return;
+    const firstGloss = entry.senses[0]?.glosses[0] ?? '';
+    const word: SavedWord = {
+      id: uuid(),
+      surface,
+      reading,
+      shortDefinition: firstGloss,
+      cueText: cue.text,
+      sourceEntryId,
+      sourceCueIndex: cue.index,
+      dictEntryIds: [entry.id],
+      dict,
+      dateSavedISO: new Date().toISOString(),
+    };
+    await addSavedWord(word);
+    setSaved(true);
+  };
+
+  return (
+    <View style={styles.entry}>
+      <View style={styles.entryHead}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headSurface}>{surface}</Text>
+          {reading && reading !== surface ? (
+            <Text style={styles.headReading}>{reading}</Text>
+          ) : null}
+          {lemma && lemma !== surface ? (
+            <Text style={styles.headLemma}>lemma: {lemma}</Text>
+          ) : null}
+        </View>
+        <Pressable onPress={onSave} hitSlop={8}>
+          <Text style={[styles.star, saved && styles.starOn]}>{saved ? '★' : '☆'}</Text>
+        </Pressable>
+      </View>
+
+      {entry.frequency ? <Text style={styles.frequency}>freq: {entry.frequency}</Text> : null}
+      {entry.nameType && entry.nameType.length > 0 ? (
+        <Text style={styles.nameType}>{entry.nameType.join(' / ')}</Text>
+      ) : null}
+
+      {entry.senses.map((sense, si) => (
+        <View key={si} style={styles.sense}>
+          {sense.pos.length > 0 && <Text style={styles.pos}>{sense.pos.join(', ')}</Text>}
+          {sense.glosses.map((g, gi) => (
+            <Text key={gi} style={styles.gloss}>{`${gi + 1}. ${g}`}</Text>
+          ))}
+          {sense.fields && sense.fields.length > 0 ? (
+            <Text style={styles.tag}>{sense.fields.join(' · ')}</Text>
+          ) : null}
+          {sense.misc && sense.misc.length > 0 ? (
+            <Text style={styles.tag}>{sense.misc.join(' · ')}</Text>
+          ) : null}
+          {sense.examples?.map((ex, ei) => (
+            <View key={ei} style={styles.example}>
+              {ex.jpn ? <Text style={styles.exJp}>{ex.jpn}</Text> : null}
+              {ex.eng ? <Text style={styles.exEn}>{ex.eng}</Text> : null}
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  popup: {
+    backgroundColor: '#0f0f0f',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    maxHeight: '70%',
+    minHeight: 200,
+    padding: 16,
+    gap: 12,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  tappedWord: { color: '#fff', fontSize: 22, fontWeight: '600' },
+  close: { color: '#888', fontSize: 18, padding: 8 },
+  tabs: { flexGrow: 0 },
+  tab: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  tabActive: { backgroundColor: '#3b82f6' },
+  tabText: { color: '#fff', fontSize: 12 },
+  body: { flex: 1 },
+  noMatch: { color: '#888', fontStyle: 'italic' },
+  entries: { gap: 16 },
+  entry: { gap: 4 },
+  entryHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  headSurface: { color: '#fff', fontSize: 18, fontWeight: '600' },
+  headReading: { color: '#aaa', fontSize: 14 },
+  headLemma: { color: '#666', fontSize: 12, marginTop: 2 },
+  star: { color: '#666', fontSize: 24 },
+  starOn: { color: '#fbbf24' },
+  frequency: { color: '#888', fontSize: 12 },
+  nameType: { color: '#a78bfa', fontSize: 12, fontWeight: '600' },
+  sense: { marginTop: 6, gap: 2 },
+  pos: { color: '#60a5fa', fontSize: 12 },
+  gloss: { color: '#fff', fontSize: 15 },
+  tag: { color: '#888', fontSize: 12, fontStyle: 'italic' },
+  example: { marginTop: 4, paddingLeft: 8, borderLeftColor: '#333', borderLeftWidth: 2 },
+  exJp: { color: '#ddd', fontSize: 13 },
+  exEn: { color: '#888', fontSize: 12 },
+});

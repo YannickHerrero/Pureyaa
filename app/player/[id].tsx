@@ -12,9 +12,11 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { usePlayerData } from '@/player/playerStore';
 import { SubtitlePane } from '@/player/SubtitlePane';
+import { DictPopup } from '@/player/DictPopup';
 import { findCueIndexAt } from '@/utils/time';
 import { getSettings } from '@/storage/settings';
-import type { SubtitleMode } from '@/types';
+import { loadDictionaries } from '@/analysis/dict';
+import type { Cue, SubtitleMode } from '@/types';
 import { DEFAULT_SETTINGS } from '@/types';
 
 export default function PlayerScreen() {
@@ -61,11 +63,13 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
   const [currentMs, setCurrentMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [mode, setMode] = useState<SubtitleMode>(DEFAULT_SETTINGS.defaultSubtitleMode);
+  const [popup, setPopup] = useState<{ cue: Cue; tokenIndex: number } | null>(null);
 
   useEffect(() => {
     (async () => {
       const s = await getSettings();
       setMode(s.defaultSubtitleMode);
+      await loadDictionaries();
     })();
   }, []);
 
@@ -103,9 +107,23 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
         />
       </View>
       <View style={styles.subtitleArea}>
-        <SubtitlePane cue={currentCue} mode={mode} />
+        <SubtitlePane
+          cue={currentCue}
+          mode={mode}
+          onTokenPress={(cue, tokenIndex) => {
+            player.pause();
+            setPopup({ cue, tokenIndex });
+          }}
+        />
       </View>
       <BasicControls player={player} isPlaying={isPlaying} />
+      <DictPopup
+        visible={popup !== null}
+        cue={popup?.cue ?? null}
+        tokenIndex={popup?.tokenIndex ?? 0}
+        sourceEntryId={entry.id}
+        onClose={() => setPopup(null)}
+      />
     </View>
   );
 }
