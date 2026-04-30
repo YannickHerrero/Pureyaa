@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
   installDictionaries,
+  type InstallProgress,
   type InstallStage,
 } from '@/onboarding/dict-installer';
 import { markOnboarded } from '@/onboarding/state';
@@ -23,13 +24,37 @@ import { DEFAULT_SETTINGS } from '@/types';
 type Phase = 'welcome' | 'install' | 'api-key';
 
 const STAGE_LABELS: Record<InstallStage, string> = {
-  'fetching-release': 'Checking for latest dictionaries…',
-  'downloading-jmdict': 'Downloading JMdict (~11 MB)…',
-  'processing-jmdict': 'Processing JMdict…',
-  'downloading-jmnedict': 'Downloading JMnedict (~13 MB)…',
-  'processing-jmnedict': 'Processing JMnedict…',
-  done: 'Done.',
+  'fetching-release': 'Checking for latest dictionaries',
+  'downloading-jmdict': 'Downloading JMdict',
+  'processing-jmdict': 'Processing JMdict',
+  'downloading-jmnedict': 'Downloading JMnedict',
+  'processing-jmnedict': 'Processing JMnedict',
+  done: 'Done',
 };
+
+function formatDetail(p: InstallProgress): string | null {
+  if (!p.total || p.current === undefined) return null;
+  if (p.unit === 'bytes') {
+    const cur = p.current / 1024 / 1024;
+    const tot = p.total / 1024 / 1024;
+    return `${cur.toFixed(1)} / ${tot.toFixed(1)} MB`;
+  }
+  if (p.unit === 'items') {
+    const cur = Math.round(p.current / 1000);
+    const tot = Math.round(p.total / 1000);
+    return `${cur}k / ${tot}k entries`;
+  }
+  return null;
+}
+
+function ProgressBar({ fraction }: { fraction: number }) {
+  const pct = Math.max(0, Math.min(1, fraction)) * 100;
+  return (
+    <View style={styles.progressBar}>
+      <View style={[styles.progressFill, { width: `${pct}%` }]} />
+    </View>
+  );
+}
 
 export default function OnboardingScreen() {
   const [phase, setPhase] = useState<Phase>('welcome');
@@ -65,17 +90,18 @@ function Welcome({ onContinue }: { onContinue: () => void }) {
 }
 
 function Install({ onDone }: { onDone: () => void }) {
-  const [stage, setStage] = useState<InstallStage>('fetching-release');
+  const [progress, setProgress] = useState<InstallProgress>({ stage: 'fetching-release' });
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
+    setProgress({ stage: 'fetching-release' });
     (async () => {
       try {
         await installDictionaries((p) => {
-          if (!cancelled) setStage(p.stage);
+          if (!cancelled) setProgress(p);
         });
         if (!cancelled) onDone();
       } catch (e) {
@@ -99,12 +125,22 @@ function Install({ onDone }: { onDone: () => void }) {
     );
   }
 
+  const detail = formatDetail(progress);
+  const fraction = progress.total ? (progress.current ?? 0) / progress.total : null;
+
   return (
     <View style={styles.body}>
       <Text style={styles.title}>Setting up dictionaries</Text>
-      <View style={styles.statusRow}>
-        <ActivityIndicator color="#3b82f6" />
-        <Text style={styles.copy}>{STAGE_LABELS[stage]}</Text>
+      <View style={styles.progressBlock}>
+        <Text style={styles.copy}>{STAGE_LABELS[progress.stage]}</Text>
+        {fraction !== null ? (
+          <>
+            <ProgressBar fraction={fraction} />
+            {detail && <Text style={styles.hint}>{detail}</Text>}
+          </>
+        ) : (
+          <ActivityIndicator color="#3b82f6" />
+        )}
       </View>
       <Text style={styles.hint}>
         Processing happens on device — JMnedict is the slowest step (~30s).
@@ -195,7 +231,18 @@ const styles = StyleSheet.create({
   copy: { color: '#aaa', fontSize: 15, lineHeight: 22 },
   hint: { color: '#666', fontSize: 13, lineHeight: 18 },
   error: { color: '#f87171', fontSize: 14, lineHeight: 20 },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  progressBlock: { gap: 8 },
+  progressBar: {
+    height: 6,
+    backgroundColor: '#181818',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+    borderRadius: 3,
+  },
   input: {
     backgroundColor: '#181818',
     color: '#fff',
