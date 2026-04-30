@@ -1,3 +1,4 @@
+import { Asset } from 'expo-asset';
 import type { Token } from '@/types';
 
 interface KuromojiToken {
@@ -13,16 +14,35 @@ interface KuromojiTokenizer {
   tokenize(text: string): KuromojiToken[];
 }
 
+const DICT_MODULES: Record<string, number> = {
+  'base.dat.gz': require('kuromoji-react-native/dict/base.dat.gz'),
+  'check.dat.gz': require('kuromoji-react-native/dict/check.dat.gz'),
+  'tid.dat.gz': require('kuromoji-react-native/dict/tid.dat.gz'),
+  'tid_pos.dat.gz': require('kuromoji-react-native/dict/tid_pos.dat.gz'),
+  'tid_map.dat.gz': require('kuromoji-react-native/dict/tid_map.dat.gz'),
+  'cc.dat.gz': require('kuromoji-react-native/dict/cc.dat.gz'),
+  'unk.dat.gz': require('kuromoji-react-native/dict/unk.dat.gz'),
+  'unk_pos.dat.gz': require('kuromoji-react-native/dict/unk_pos.dat.gz'),
+  'unk_map.dat.gz': require('kuromoji-react-native/dict/unk_map.dat.gz'),
+  'unk_char.dat.gz': require('kuromoji-react-native/dict/unk_char.dat.gz'),
+  'unk_compat.dat.gz': require('kuromoji-react-native/dict/unk_compat.dat.gz'),
+  'unk_invoke.dat.gz': require('kuromoji-react-native/dict/unk_invoke.dat.gz'),
+};
+
 let tokenizerPromise: Promise<KuromojiTokenizer> | null = null;
 
 async function buildTokenizer(): Promise<KuromojiTokenizer> {
-  // kuromoji-react-native exposes a builder that loads dictionary files
-  // bundled with the package. We import lazily so the module only loads
-  // when the analysis pipeline runs.
+  const filenames = Object.keys(DICT_MODULES);
+  const assets = await Asset.loadAsync(filenames.map((f) => DICT_MODULES[f]));
+  const dicPath: Record<string, string> = {};
+  filenames.forEach((f, i) => {
+    dicPath[f] = assets[i].localUri ?? assets[i].uri;
+  });
+
   const km = await import('kuromoji-react-native');
   const builder = (km as any).default ?? km;
   return await new Promise<KuromojiTokenizer>((resolve, reject) => {
-    builder.builder().build((err: Error | null, tokenizer: KuromojiTokenizer) => {
+    builder.builder({ dicPath }).build((err: Error | null, tokenizer: KuromojiTokenizer) => {
       if (err) reject(err);
       else resolve(tokenizer);
     });
@@ -39,8 +59,6 @@ export function resetTokenizer(): void {
 }
 
 function toKatakana(s: string): string {
-  // Kuromoji emits readings in katakana already. Defensive: convert any
-  // hiragana that slipped through.
   let out = '';
   for (let i = 0; i < s.length; i++) {
     const code = s.charCodeAt(i);
