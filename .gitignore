@@ -48,3 +48,8 @@ coverage/
 # Spec (kept locally only)
 specs.md
 
+# Orphan from the previous build-time dict pipeline; safe to delete.
+# Kept ignored so they don't clutter git status if you haven't cleaned them.
+assets/dict/
+tmp/
+
