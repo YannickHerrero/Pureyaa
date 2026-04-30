@@ -71,6 +71,20 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
   const [retimerOpen, setRetimerOpen] = useState(false);
   const [retimer, setRetimer] = useState<RetimerState>(entry.retimerState);
   const lastAutoPausedCueIndex = useRef<number>(-1);
+  const lastProgressSavedAt = useRef<number>(0);
+  const latestProgressRef = useRef<number>(entry.watchProgressPercent);
+
+  const persistProgress = async (currentMsArg: number, durationMsArg: number) => {
+    if (durationMsArg <= 0) return;
+    const pct = Math.max(0, Math.min(100, (currentMsArg / durationMsArg) * 100));
+    latestProgressRef.current = pct;
+    await upsertEntry({
+      ...entry,
+      retimerState: retimer,
+      watchProgressPercent: pct,
+      lastWatchedISO: new Date().toISOString(),
+    });
+  };
 
   const onApplyRetimer = async (next: RetimerState) => {
     setRetimer(next);
@@ -88,10 +102,31 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
 
   useEffect(() => {
     const sub = player.addListener('timeUpdate', (e) => {
-      setCurrentMs(Math.round(e.currentTime * 1000));
+      const ms = Math.round(e.currentTime * 1000);
+      setCurrentMs(ms);
+      const dMs =
+        durationMs > 0
+          ? durationMs
+          : Number.isFinite(player.duration) && player.duration > 0
+            ? Math.round(player.duration * 1000)
+            : 0;
+      const now = Date.now();
+      if (dMs > 0 && now - lastProgressSavedAt.current > 5000) {
+        lastProgressSavedAt.current = now;
+        persistProgress(ms, dMs);
+      }
     });
     const subPlaying = player.addListener('playingChange', (e) => {
       setIsPlaying(e.isPlaying);
+      if (!e.isPlaying) {
+        const dMs =
+          durationMs > 0
+            ? durationMs
+            : Number.isFinite(player.duration) && player.duration > 0
+              ? Math.round(player.duration * 1000)
+              : 0;
+        if (dMs > 0) persistProgress(currentMs, dMs);
+      }
     });
     const subStatus = player.addListener('statusChange', () => {
       const d = player.duration;
@@ -102,7 +137,17 @@ function Player({ data }: { data: ReturnType<typeof usePlayerData> extends infer
       subPlaying.remove();
       subStatus.remove();
     };
-  }, [player]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player, durationMs]);
+
+  useEffect(() => {
+    return () => {
+      // On unmount, persist final progress + retimer.
+      const dMs = durationMs > 0 ? durationMs : entry.durationSeconds * 1000;
+      if (dMs > 0) persistProgress(currentMs, dMs);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const aspect = entry.videoAspectRatio > 0 ? entry.videoAspectRatio : 16 / 9;
   const videoHeight = screenWidth / aspect;
