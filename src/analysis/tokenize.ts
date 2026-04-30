@@ -1,5 +1,28 @@
 import { Asset } from 'expo-asset';
+import pako from 'pako';
 import type { Token } from '@/types';
+
+// kuromoji's RN loader requires zlibjs/bin/gunzip.min.js, which is a
+// browser-style script that doesn't expose its Zlib namespace under Hermes.
+// Patch the prototype so the loader uses pako instead. Same input/output —
+// fetch the gzipped dict, decompress, hand back an ArrayBuffer.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const RNDictionaryLoader = require('kuromoji-react-native/src/loader/ReactNativeDictionaryLoader');
+RNDictionaryLoader.prototype.loadArrayBuffer = function (
+  url: string,
+  callback: (err: Error | null, buffer: ArrayBuffer | null) => void,
+) {
+  fetch(url)
+    .then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status} loading ${url}`);
+      return r.arrayBuffer();
+    })
+    .then((buf) => {
+      const inflated = pako.ungzip(new Uint8Array(buf));
+      callback(null, inflated.buffer as ArrayBuffer);
+    })
+    .catch((err) => callback(err, null));
+};
 
 interface KuromojiToken {
   surface_form: string;
