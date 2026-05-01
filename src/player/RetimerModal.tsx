@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Modal } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, Modal, ScrollView } from 'react-native';
 import type { RetimerState } from '@/types';
 import {
   computeFromOnePoint,
@@ -8,7 +8,11 @@ import {
   type SyncPoint,
 } from '@/utils/retimer';
 import { formatHMS } from '@/utils/time';
-import { addRecentRetimer } from '@/storage/recentRetimers';
+import {
+  addRecentRetimer,
+  getRecentRetimers,
+  type RecentRetimer,
+} from '@/storage/recentRetimers';
 
 export interface RetimerModalProps {
   visible: boolean;
@@ -31,6 +35,12 @@ export function RetimerModal(props: RetimerModalProps) {
   const [p1, setP1] = useState<DraftPoint>(EMPTY);
   const [p2, setP2] = useState<DraftPoint>(EMPTY);
   const [error, setError] = useState<string | null>(null);
+  const [recents, setRecents] = useState<RecentRetimer[]>([]);
+
+  useEffect(() => {
+    if (!visible) return;
+    getRecentRetimers().then(setRecents).catch(() => {});
+  }, [visible]);
 
   const reset = () => {
     setStage(1);
@@ -54,6 +64,14 @@ export function RetimerModal(props: RetimerModalProps) {
     addRecentRetimer(next.offsetMs, next.scaleFactor).catch(() => {});
     reset();
     onClose();
+  };
+
+  const applyRecent = (r: RecentRetimer) => {
+    applyAndRemember({
+      offsetMs: r.offsetMs,
+      scaleFactor: r.scaleFactor,
+      isSynced: true,
+    });
   };
 
   const applyOnePoint = () => {
@@ -102,6 +120,27 @@ export function RetimerModal(props: RetimerModalProps) {
               <Text style={styles.close}>✕</Text>
             </Pressable>
           </View>
+
+          {recents.length > 0 && (
+            <View style={styles.recentBlock}>
+              <Text style={styles.recentTitle}>Recent</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.recentRow}
+              >
+                {recents.map((r, i) => (
+                  <Pressable
+                    key={i}
+                    style={styles.recentPill}
+                    onPress={() => applyRecent(r)}
+                  >
+                    <Text style={styles.recentText}>{formatRecent(r)}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          )}
 
           <Text style={styles.stage}>Sync point {stage} of 2</Text>
           <Text style={styles.help}>
@@ -173,6 +212,16 @@ function CaptureButton({
   );
 }
 
+function formatRecent(r: RecentRetimer): string {
+  const sec = r.offsetMs / 1000;
+  const sign = sec > 0 ? '+' : sec < 0 ? '−' : '';
+  let label = `${sign}${Math.abs(sec).toFixed(2)}s`;
+  if (Math.abs(r.scaleFactor - 1) > 1e-6) {
+    label += ` × ${r.scaleFactor.toFixed(3)}`;
+  }
+  return label;
+}
+
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
@@ -215,4 +264,14 @@ const styles = StyleSheet.create({
   resetRow: { alignItems: 'center', marginTop: 8 },
   resetText: { color: '#f87171', fontSize: 13, textDecorationLine: 'underline' },
   error: { color: '#f87171', fontSize: 13, marginTop: 4 },
+  recentBlock: { gap: 6 },
+  recentTitle: { color: '#888', fontSize: 12, fontWeight: '600', letterSpacing: 0.5 },
+  recentRow: { gap: 8, paddingRight: 12 },
+  recentPill: {
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  recentText: { color: '#fff', fontSize: 13, fontVariant: ['tabular-nums'] },
 });
