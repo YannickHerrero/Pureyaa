@@ -67,9 +67,9 @@ function formatSource(entry: LibraryEntry): string {
 
 /**
  * Build a card payload from a cue + a focused dict entry. Extracts a
- * screenshot at the cue's midpoint (pre-retimer times — the video file
- * is the source of truth, not the subtitle clock) and an audio clip with
- * configurable padding around the cue.
+ * screenshot at the cue's midpoint and an audio clip with configurable
+ * padding around the cue. Cue times come in subtitle clock; the retimer
+ * is applied to convert to video-clock times for the native extractors.
  */
 export async function buildCardAssets(args: {
   entry: LibraryEntry;
@@ -93,8 +93,11 @@ export async function buildCardAssets(args: {
   const imagePath = new File(cacheDir, imageFilename).uri;
   const audioRequestedPath = new File(cacheDir, audioRequestedFilename).uri;
 
-  // Image at cue midpoint
-  const midMs = Math.max(0, Math.floor((cue.startMs + cue.endMs) / 2));
+  // Image at cue midpoint, in video-clock time so it lines up with the
+  // frame the user was looking at when the line played.
+  const cueStartV = effectiveStartMs(cue, entry.retimerState);
+  const cueEndV = effectiveEndMs(cue, entry.retimerState);
+  const midMs = Math.max(0, Math.floor((cueStartV + cueEndV) / 2));
   console.log(`[buildCard] image: midMs=${midMs} → ${imagePath}`);
   try {
     await extractThumbnail(videoUri, imagePath, midMs);
@@ -110,11 +113,6 @@ export async function buildCardAssets(args: {
   let audioBase64: string | null = null;
 
   if (settings.audioMode === 'original') {
-    // Cue times are in subtitle clock; the video file is in video clock.
-    // Apply the retimer so the extracted clip lines up with what the user
-    // actually heard while watching the cue.
-    const cueStartV = effectiveStartMs(cue, entry.retimerState);
-    const cueEndV = effectiveEndMs(cue, entry.retimerState);
     const rawStart = Math.max(0, cueStartV - settings.audioPaddingBeforeMs);
     const rawEnd = cueEndV + settings.audioPaddingAfterMs;
     const cappedEnd = Math.min(rawEnd, rawStart + MAX_AUDIO_DURATION_MS);
