@@ -10,7 +10,7 @@ import com.ichi2.anki.api.AddContentApi
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import expo.modules.kotlin.permissions.Permissions
+import expo.modules.interfaces.permissions.Permissions
 import java.io.File
 import java.util.UUID
 
