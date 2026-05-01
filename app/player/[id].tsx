@@ -261,6 +261,8 @@ function Player({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const leftTapRef = useRef(0);
+  const rightTapRef = useRef(0);
   const seekedToInitialRef = useRef<boolean>(false);
   useEffect(() => {
     if (seekedToInitialRef.current) return;
@@ -330,10 +332,36 @@ function Player({
           contentFit="contain"
           nativeControls={false}
         />
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={() => setShowControls((s) => !s)}
-        />
+        <View style={styles.tapZones}>
+          <Pressable
+            style={styles.tapZone}
+            onPress={() => {
+              const now = Date.now();
+              if (now - leftTapRef.current < 300) {
+                seekToAdjacentCue(-1);
+                leftTapRef.current = 0;
+              } else {
+                leftTapRef.current = now;
+              }
+            }}
+          />
+          <Pressable
+            style={styles.tapZone}
+            onPress={() => setShowControls((s) => !s)}
+          />
+          <Pressable
+            style={styles.tapZone}
+            onPress={() => {
+              const now = Date.now();
+              if (now - rightTapRef.current < 300) {
+                seekToAdjacentCue(1);
+                rightTapRef.current = 0;
+              } else {
+                rightTapRef.current = now;
+              }
+            }}
+          />
+        </View>
         {!isPlaying && (
           <View style={styles.playOverlay} pointerEvents="box-none">
             <Pressable style={styles.playButton} onPress={() => player.play()}>
@@ -393,6 +421,11 @@ const styles = StyleSheet.create({
   loading: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
   errorText: { color: '#f87171', padding: 16 },
   videoArea: { backgroundColor: '#000' },
+  tapZones: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+  },
+  tapZone: { flex: 1 },
   playOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
