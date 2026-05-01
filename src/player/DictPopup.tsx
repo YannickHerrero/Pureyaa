@@ -53,36 +53,33 @@ export function DictPopup({
             </Pressable>
           </View>
 
-          {cue ? (
-            <View style={styles.cueContext}>
-              <Text style={styles.cueJp}>{cue.text}</Text>
-              {cue.translation && cue.translation.trim().length > 0 ? (
-                <Text style={styles.cueEn}>{cue.translation}</Text>
-              ) : null}
-            </View>
-          ) : null}
+          <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+            {cue ? (
+              <View style={styles.cueContext}>
+                <Text style={styles.cueJp}>{cue.text}</Text>
+                {cue.translation && cue.translation.trim().length > 0 ? (
+                  <Text style={styles.cueEn}>{cue.translation}</Text>
+                ) : null}
+              </View>
+            ) : null}
 
-          {matches.length === 0 ? (
-            <Text style={styles.noMatch}>No dictionary match.</Text>
-          ) : (
-            <>
-              <MatchTabs
-                matches={matches}
-                active={activeIdx}
-                onSelect={setActiveIdx}
-              />
-              <ScrollView
-                style={styles.body}
-                contentContainerStyle={styles.bodyContent}
-              >
+            {matches.length === 0 ? (
+              <Text style={styles.noMatch}>No dictionary match.</Text>
+            ) : (
+              <>
+                <MatchTabs
+                  matches={matches}
+                  active={activeIdx}
+                  onSelect={setActiveIdx}
+                />
                 <MatchView
                   match={matches[activeIdx]}
                   cue={cue}
                   sourceEntryId={sourceEntryId}
                 />
-              </ScrollView>
-            </>
-          )}
+              </>
+            )}
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -239,11 +236,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     width: '100%',
     maxWidth: 520,
+    // flex + maxHeight gives the dialog a definite height (capped at 85%),
+    // which is needed for the inner ScrollView's flex: 1 to actually scroll.
+    flex: 1,
     maxHeight: '85%',
     padding: 16,
     gap: 12,
   },
-  bodyContent: { paddingBottom: 8 },
+  bodyContent: { paddingBottom: 8, gap: 12 },
   cueContext: {
     backgroundColor: '#181818',
     borderRadius: 8,
