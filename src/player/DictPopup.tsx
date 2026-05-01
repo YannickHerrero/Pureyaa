@@ -18,6 +18,7 @@ export interface DictPopupProps {
   tokenIndex: number;
   sourceEntryId: string;
   onClose: () => void;
+  onAddToAnki?: (cue: Cue, dict: DictMatch['dict'], entry: DictEntry) => void;
 }
 
 export function DictPopup({
@@ -26,6 +27,7 @@ export function DictPopup({
   tokenIndex,
   sourceEntryId,
   onClose,
+  onAddToAnki,
 }: DictPopupProps) {
   const matches = cue?.matchesByTokenIndex[tokenIndex] ?? [];
   const [activeIdx, setActiveIdx] = useState(0);
@@ -76,6 +78,7 @@ export function DictPopup({
                   match={matches[activeIdx]}
                   cue={cue}
                   sourceEntryId={sourceEntryId}
+                  onAddToAnki={onAddToAnki}
                 />
               </>
             )}
@@ -118,10 +121,12 @@ function MatchView({
   match,
   cue,
   sourceEntryId,
+  onAddToAnki,
 }: {
   match: DictMatch;
   cue: Cue | null;
   sourceEntryId: string;
+  onAddToAnki?: (cue: Cue, dict: DictMatch['dict'], entry: DictEntry) => void;
 }) {
   const entries = getEntries(match.entryIds, match.dict);
   if (entries.length === 0) {
@@ -136,6 +141,7 @@ function MatchView({
           dict={match.dict}
           cue={cue}
           sourceEntryId={sourceEntryId}
+          onAddToAnki={onAddToAnki}
         />
       ))}
     </View>
@@ -147,11 +153,13 @@ function DictEntryView({
   dict,
   cue,
   sourceEntryId,
+  onAddToAnki,
 }: {
   entry: DictEntry;
   dict: 'jmdict' | 'jmnedict';
   cue: Cue | null;
   sourceEntryId: string;
+  onAddToAnki?: (cue: Cue, dict: 'jmdict' | 'jmnedict', entry: DictEntry) => void;
 }) {
   const [saved, setSaved] = useState(false);
   const surface = entry.forms[0] ?? entry.readings[0] ?? '';
@@ -189,9 +197,20 @@ function DictEntryView({
             <Text style={styles.headLemma}>lemma: {lemma}</Text>
           ) : null}
         </View>
-        <Pressable onPress={onSave} hitSlop={8}>
-          <Text style={[styles.star, saved && styles.starOn]}>{saved ? '★' : '☆'}</Text>
-        </Pressable>
+        <View style={styles.entryActions}>
+          {onAddToAnki && cue ? (
+            <Pressable
+              onPress={() => onAddToAnki(cue, dict, entry)}
+              hitSlop={8}
+              style={styles.ankiButton}
+            >
+              <Text style={styles.ankiButtonText}>+ Anki</Text>
+            </Pressable>
+          ) : null}
+          <Pressable onPress={onSave} hitSlop={8}>
+            <Text style={[styles.star, saved && styles.starOn]}>{saved ? '★' : '☆'}</Text>
+          </Pressable>
+        </View>
       </View>
 
       {entry.frequency ? <Text style={styles.frequency}>freq: {entry.frequency}</Text> : null}
@@ -279,6 +298,14 @@ const styles = StyleSheet.create({
   headLemma: { color: '#666', fontSize: 12, marginTop: 2 },
   star: { color: '#666', fontSize: 24 },
   starOn: { color: '#fbbf24' },
+  entryActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  ankiButton: {
+    backgroundColor: '#1f2937',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+  },
+  ankiButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   frequency: { color: '#888', fontSize: 12 },
   nameType: { color: '#a78bfa', fontSize: 12, fontWeight: '600' },
   sense: { marginTop: 6, gap: 2 },
