@@ -9,18 +9,22 @@ import {
   Switch,
   ActivityIndicator,
 } from 'react-native';
-import type { AnkiSettings, AppSettings, ModelId, SubtitleMode } from '@/types';
-import { DEFAULT_ANKI_SETTINGS, DEFAULT_SETTINGS } from '@/types';
+import type { AnkiSettings, AppSettings, AudioMode, ModelId, SubtitleMode } from '@/types';
+import { DEFAULT_ANKI_SETTINGS, DEFAULT_SETTINGS, TTS_VOICES } from '@/types';
 import {
   getSettings,
   saveSettings,
   getApiKey,
   setApiKey,
   clearApiKey,
+  getGoogleTtsApiKey,
+  setGoogleTtsApiKey,
+  clearGoogleTtsApiKey,
 } from '@/storage/settings';
 import { getAnkiSettings, saveAnkiSettings } from '@/storage/ankiSettings';
 import { testApiKey } from '@/analysis/claude';
 import { makeAnkiClient, AnkiConnectError } from '@/anki/client';
+import { testGoogleTts } from '@/anki/tts';
 
 const MODELS: ModelId[] = ['haiku', 'sonnet', 'opus'];
 const SUB_MODES: SubtitleMode[] = ['jp', 'jp+en', 'en'];
@@ -39,16 +43,51 @@ export default function SettingsScreen() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [ttsKey, setTtsKey] = useState<string>('');
+  const [ttsKeyDirty, setTtsKeyDirty] = useState(false);
+  const [ttsTesting, setTtsTesting] = useState(false);
+  const [ttsResult, setTtsResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     (async () => {
-      const [s, a, k] = await Promise.all([getSettings(), getAnkiSettings(), getApiKey()]);
+      const [s, a, k, t] = await Promise.all([
+        getSettings(),
+        getAnkiSettings(),
+        getApiKey(),
+        getGoogleTtsApiKey(),
+      ]);
       setSettings(s);
       setAnki(a);
       setApiKeyState(k ?? '');
+      setTtsKey(t ?? '');
       setLoaded(true);
     })();
   }, []);
+
+  const onSaveTtsKey = async () => {
+    const trimmed = ttsKey.trim();
+    if (trimmed.length === 0) await clearGoogleTtsApiKey();
+    else await setGoogleTtsApiKey(trimmed);
+    setTtsKeyDirty(false);
+    setTtsResult(null);
+  };
+
+  const onTestTts = async () => {
+    if (ttsKey.trim().length === 0) return;
+    setTtsTesting(true);
+    setTtsResult(null);
+    try {
+      const trimmed = ttsKey.trim();
+      if (ttsKeyDirty) await setGoogleTtsApiKey(trimmed);
+      await testGoogleTts(trimmed, anki.ttsVoice);
+      setTtsKeyDirty(false);
+      setTtsResult({ ok: true, message: 'Synthesis successful.' });
+    } catch (e) {
+      setTtsResult({ ok: false, message: (e as Error).message });
+    } finally {
+      setTtsTesting(false);
+    }
+  };
 
   const updateAnki = async (patch: Partial<AnkiSettings>) => {
     const next = { ...anki, ...patch };
@@ -179,13 +218,75 @@ export default function SettingsScreen() {
       </Section>
 
       <Section title="Anki">
-        <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>Include audio in cards</Text>
-          <Switch
-            value={anki.includeAudio}
-            onValueChange={(v) => updateAnki({ includeAudio: v })}
-          />
+        <Label>Audio source</Label>
+        <View style={styles.choiceRow}>
+          {(['original', 'tts', 'none'] as AudioMode[]).map((m) => (
+            <Pressable
+              key={m}
+              style={[styles.choice, anki.audioMode === m && styles.choiceActive]}
+              onPress={() => updateAnki({ audioMode: m })}
+            >
+              <Text style={styles.choiceText}>
+                {m === 'original' ? 'Original' : m === 'tts' ? 'TTS' : 'None'}
+              </Text>
+            </Pressable>
+          ))}
         </View>
+
+        {anki.audioMode === 'tts' && (
+          <View style={styles.ttsBlock}>
+            <Label>Google Cloud TTS API key</Label>
+            <TextInput
+              value={ttsKey}
+              onChangeText={(t) => {
+                setTtsKey(t);
+                setTtsKeyDirty(true);
+                setTtsResult(null);
+              }}
+              placeholder="AIza..."
+              placeholderTextColor="#666"
+              secureTextEntry
+              style={styles.input}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.row}>
+              <Pressable
+                style={[styles.button, !ttsKeyDirty && styles.buttonDisabled]}
+                disabled={!ttsKeyDirty}
+                onPress={onSaveTtsKey}
+              >
+                <Text style={styles.buttonText}>Save</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.button, (ttsTesting || ttsKey.trim().length === 0) && styles.buttonDisabled]}
+                disabled={ttsTesting || ttsKey.trim().length === 0}
+                onPress={onTestTts}
+              >
+                <Text style={styles.buttonText}>{ttsTesting ? 'Testing…' : 'Test TTS'}</Text>
+              </Pressable>
+            </View>
+            {ttsResult && (
+              <Text style={[styles.testResult, ttsResult.ok ? styles.ok : styles.bad]}>
+                {ttsResult.ok ? '✓ ' : '✗ '}
+                {ttsResult.message}
+              </Text>
+            )}
+
+            <Label>TTS voice</Label>
+            <View style={styles.choiceRow}>
+              {TTS_VOICES.map((v) => (
+                <Pressable
+                  key={v.id}
+                  style={[styles.choice, anki.ttsVoice === v.id && styles.choiceActive]}
+                  onPress={() => updateAnki({ ttsVoice: v.id })}
+                >
+                  <Text style={styles.choiceText}>{v.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
 
         <Label>AnkiConnect URL</Label>
         <TextInput
@@ -325,4 +426,5 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   toggleLabel: { color: '#fff', fontSize: 15, flex: 1, marginRight: 12 },
+  ttsBlock: { gap: 8, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#1f2937' },
 });
