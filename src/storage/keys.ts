@@ -5,9 +5,11 @@ export const STORAGE_KEYS = {
   onboarded: 'pureyaa.onboarded.v1',
   recentRetimers: 'pureyaa.recentRetimers.v1',
   ankiSettings: 'pureyaa.ankiSettings.v1',
+  wanikaniKanjiCache: 'pureyaa.wanikaniKanjiCache.v1',
 } as const;
 
 export const SECURE_KEYS = {
   anthropicApiKey: 'pureyaa.anthropicApiKey',
   googleTtsApiKey: 'pureyaa.googleTtsApiKey',
+  wanikaniApiKey: 'pureyaa.wanikaniApiKey',
 } as const;

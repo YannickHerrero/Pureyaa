@@ -49,3 +49,19 @@ export async function setGoogleTtsApiKey(key: string): Promise<void> {
 export async function clearGoogleTtsApiKey(): Promise<void> {
   await SecureStore.deleteItemAsync(SECURE_KEYS.googleTtsApiKey);
 }
+
+export async function getWanikaniApiKey(): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(SECURE_KEYS.wanikaniApiKey);
+  } catch {
+    return null;
+  }
+}
+
+export async function setWanikaniApiKey(key: string): Promise<void> {
+  await SecureStore.setItemAsync(SECURE_KEYS.wanikaniApiKey, key);
+}
+
+export async function clearWanikaniApiKey(): Promise<void> {
+  await SecureStore.deleteItemAsync(SECURE_KEYS.wanikaniApiKey);
+}
