@@ -21,35 +21,49 @@ interface RpcEnvelope<T> {
   error: string | null;
 }
 
-async function invoke<T>(url: string, action: string, params?: unknown): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        action,
-        version: ANKI_CONNECT_VERSION,
-        params: params ?? {},
-      }),
+// Use XMLHttpRequest instead of fetch: AnkiconnectAndroid uses NanoHTTPD as
+// its HTTP server, which mishandles bodies sent with chunked transfer
+// encoding (which RN's fetch sometimes uses). XHR sends with explicit
+// Content-Length, which NanoHTTPD reads correctly.
+function invoke<T>(url: string, action: string, params?: unknown): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      action,
+      version: ANKI_CONNECT_VERSION,
+      params: params ?? {},
     });
-  } catch {
-    throw new AnkiConnectError(
-      'unreachable',
-      `Could not reach AnkiConnect at ${url}. Is the AnkiconnectAndroid service running?`,
-    );
-  }
-  if (!res.ok) {
-    throw new AnkiConnectError('http', `AnkiConnect HTTP ${res.status}`);
-  }
-  let body: RpcEnvelope<T>;
-  try {
-    body = (await res.json()) as RpcEnvelope<T>;
-  } catch {
-    throw new AnkiConnectError('protocol', 'AnkiConnect returned non-JSON');
-  }
-  if (body.error) throw new AnkiConnectError('rpc', body.error);
-  return body.result;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.responseType = 'text';
+    xhr.onerror = () =>
+      reject(
+        new AnkiConnectError(
+          'unreachable',
+          `Could not reach AnkiConnect at ${url}. Is the AnkiconnectAndroid service running?`,
+        ),
+      );
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new AnkiConnectError('http', `AnkiConnect HTTP ${xhr.status}`));
+        return;
+      }
+      let envelope: RpcEnvelope<T>;
+      try {
+        envelope = JSON.parse(xhr.responseText) as RpcEnvelope<T>;
+      } catch {
+        reject(new AnkiConnectError('protocol', 'AnkiConnect returned non-JSON'));
+        return;
+      }
+      if (envelope.error) {
+        reject(new AnkiConnectError('rpc', envelope.error));
+        return;
+      }
+      resolve(envelope.result);
+    };
+    xhr.send(body);
+  });
 }
 
 export interface AnkiClient {
