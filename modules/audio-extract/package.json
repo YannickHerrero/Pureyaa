@@ -1,0 +1,7 @@
+{
+  "name": "audio-extract",
+  "version": "1.0.0",
+  "description": "Local Expo Module: extract audio segments from a video file via MediaExtractor + MediaMuxer.",
+  "main": "src/index.ts",
+  "private": true
+}
