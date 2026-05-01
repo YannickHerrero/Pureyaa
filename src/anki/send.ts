@@ -21,24 +21,29 @@ const FIELD_ORDER = [
   'Source',
 ] as const;
 
-function pickMimeType(filename: string): string {
+// AnkiDroid's AddContentApi.formatMediaName uses literal string equality
+// against "audio" / "image" — full MIME types like "image/jpeg" are
+// rejected and addMediaFromUri returns null. Pass the bare category only.
+function pickMimeType(filename: string): 'image' | 'audio' {
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   switch (ext) {
     case 'jpg':
     case 'jpeg':
-      return 'image/jpeg';
     case 'png':
-      return 'image/png';
+    case 'webp':
+    case 'gif':
+      return 'image';
     case 'mp3':
-      return 'audio/mpeg';
     case 'm4a':
     case 'mp4':
-      return 'audio/mp4';
+    case 'aac':
     case 'ogg':
     case 'opus':
-      return 'audio/ogg';
+    case 'wav':
+    case 'flac':
+      return 'audio';
     default:
-      return 'application/octet-stream';
+      throw new Error(`Unsupported media extension for AnkiDroid: ${filename}`);
   }
 }
 
