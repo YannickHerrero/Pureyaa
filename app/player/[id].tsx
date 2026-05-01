@@ -118,7 +118,7 @@ function Relocate({
     setBusy(true);
     try {
       const r = await DocumentPicker.getDocumentAsync({
-        type: which === 'video' ? 'video/*' : ['application/x-subrip', 'text/plain', '*/*'],
+        type: which === 'video' ? 'video/*' : ['application/x-subrip', 'text/plain'],
         copyToCacheDirectory: which === 'subtitle',
       });
       if (r.canceled) return;

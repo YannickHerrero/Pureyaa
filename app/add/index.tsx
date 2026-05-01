@@ -61,14 +61,11 @@ export default function AddScreen() {
     setPicking('srt');
     try {
       const r = await DocumentPicker.getDocumentAsync({
-        type: ['application/x-subrip', 'text/plain', '*/*'],
+        type: ['application/x-subrip', 'text/plain'],
         copyToCacheDirectory: true,
       });
       if (r.canceled) return;
       const asset = r.assets[0];
-      if (!asset.name.toLowerCase().endsWith('.srt')) {
-        // Soft-warn; we still accept since some pickers report odd MIME types.
-      }
       setSubtitle({ uri: asset.uri, name: asset.name, size: asset.size });
     } finally {
       setPicking(null);
