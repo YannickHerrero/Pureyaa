@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal, View, Text, Pressable, StyleSheet, TextInput, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import { AnkiBridge } from 'anki-bridge';
 import { File } from 'expo-file-system';
 import type { LibraryEntry } from '@/types';
 import { upsertEntry, deleteEntry } from '@/storage/entries';
@@ -70,7 +71,9 @@ export function EntryContextMenu({
       copyToCacheDirectory: false,
     });
     if (r.canceled) return;
-    await upsertEntry({ ...entry, videoUri: r.assets[0].uri });
+    const uri = r.assets[0].uri;
+    await AnkiBridge.persistUriPermission(uri);
+    await upsertEntry({ ...entry, videoUri: uri });
     onChanged();
     close();
   };
