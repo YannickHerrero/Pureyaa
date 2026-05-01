@@ -23,46 +23,128 @@ class AnkiBridgeModule : Module() {
     private val PUREYAA_FIELDS = arrayOf(
       "Image",
       "Audio",
-      "JapaneseRuby",
-      "JapanesePlain",
+      "SentenceFront",
+      "SentenceBack",
       "English",
       "GrammarNote",
       "FocusWord",
       "FocusReading",
       "FocusGlosses",
+      "KanjiList",
       "Source",
     )
 
+    // Front: just the sentence, plain text, focus word underlined.
+    // No image, no audio, no furigana — minimal recall surface.
     private val PRODUCTION_FRONT = """
-      {{Image}}
-      <div class="jp">{{JapaneseRuby}}</div>
-      {{Audio}}
+      <div class="sentence sentence-front">{{SentenceFront}}</div>
     """.trimIndent()
 
+    // Back: image → sentence with furigana → audio (autoplay) → translation
+    // → grammar → focus block → kanji list → source. We don't use {{FrontSide}}
+    // because the back has its own ordering with the ruby version of the sentence.
     private val PRODUCTION_BACK = """
-      {{FrontSide}}
+      <div class="image-wrap">{{Image}}</div>
+      <div class="sentence sentence-back">{{SentenceBack}}</div>
+      <div class="audio-row">{{Audio}}</div>
       <hr>
-      <div class="en">{{English}}</div>
+      <div class="english">{{English}}</div>
       {{#GrammarNote}}<div class="grammar">{{GrammarNote}}</div>{{/GrammarNote}}
-      <div class="focus">
-        <span class="word">{{FocusWord}}</span>
-        <span class="reading">{{FocusReading}}</span>
-        <div class="glosses">{{FocusGlosses}}</div>
+      <div class="focus-block">
+        <span class="focus-word">{{FocusWord}}</span>
+        <span class="focus-reading">{{FocusReading}}</span>
+        <div class="focus-glosses">{{FocusGlosses}}</div>
       </div>
+      {{#KanjiList}}<div class="kanji-section">{{KanjiList}}</div>{{/KanjiList}}
       <div class="source">{{Source}}</div>
     """.trimIndent()
 
+    // Adaptive theme: light by default, .nightMode override for AnkiDroid dark.
     private val PUREYAA_CSS = """
-      .card { font-family: sans-serif; color: #1f2937; background: #fff; padding: 16px; }
-      .jp { font-size: 28px; line-height: 1.6; text-align: center; }
-      .en { color: #4b5563; font-size: 16px; margin-top: 12px; text-align: center; }
-      .grammar { color: #b45309; font-size: 14px; font-style: italic; margin-top: 8px; }
-      .focus { margin-top: 16px; padding: 12px; background: #f9fafb; border-radius: 6px; }
-      .focus .word { font-weight: 600; font-size: 20px; }
-      .focus .reading { color: #6b7280; margin-left: 8px; }
-      .focus .glosses { margin-top: 6px; }
-      .source { color: #9ca3af; font-size: 12px; margin-top: 16px; text-align: right; }
-      img { max-width: 100%; border-radius: 4px; }
+      .card {
+        font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic Pro', 'Yu Gothic', YuGothic, Meiryo, sans-serif;
+        color: #1f2937;
+        background: #fff;
+        padding: 16px;
+        line-height: 1.6;
+      }
+
+      .sentence-front {
+        font-size: 32px;
+        line-height: 1.7;
+        text-align: center;
+        padding: 24px 8px;
+      }
+      .sentence-back {
+        font-size: 26px;
+        line-height: 1.9;
+        text-align: center;
+        padding: 12px 8px;
+      }
+
+      .focus {
+        border-bottom: 2px solid #3b82f6;
+        padding-bottom: 1px;
+      }
+
+      .image-wrap { text-align: center; margin-bottom: 12px; }
+      .image-wrap img { max-width: 100%; max-height: 240px; border-radius: 6px; }
+
+      .audio-row { text-align: center; margin: 8px 0; }
+
+      hr { border: none; border-top: 1px solid #e5e7eb; margin: 16px 0; }
+
+      .english { font-size: 18px; text-align: center; color: #4b5563; }
+
+      .grammar {
+        font-size: 14px;
+        font-style: italic;
+        color: #b45309;
+        margin-top: 8px;
+        padding: 8px 12px;
+        background: #fffbeb;
+        border-radius: 4px;
+      }
+
+      .focus-block { margin-top: 16px; padding: 12px 14px; background: #f9fafb; border-radius: 6px; }
+      .focus-word { font-size: 22px; font-weight: 600; }
+      .focus-reading { margin-left: 10px; color: #6b7280; font-size: 18px; }
+      .focus-glosses { margin-top: 6px; font-size: 15px; color: #1f2937; }
+      .focus-glosses ul { margin: 0; padding-left: 20px; }
+      .focus-glosses i { color: #6b7280; font-style: italic; }
+
+      .kanji-section { margin-top: 16px; }
+      .kanji-list { display: flex; flex-direction: column; gap: 6px; }
+      .kanji-row {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        padding: 6px 10px;
+        background: #f3f4f6;
+        border-radius: 4px;
+      }
+      .kanji-char { font-size: 24px; font-weight: 500; min-width: 1.6em; }
+      .kanji-meanings { flex: 1; font-size: 15px; color: #1f2937; }
+      .kanji-readings { font-size: 13px; color: #6b7280; white-space: nowrap; }
+
+      .source { text-align: right; margin-top: 16px; font-size: 11px; color: #9ca3af; }
+
+      ruby rt { font-size: 0.5em; color: #6b7280; }
+
+      .nightMode .card { color: #e5e7eb; background: #1a1a1a; }
+      .nightMode .focus { border-bottom-color: #60a5fa; }
+      .nightMode hr { border-top-color: #374151; }
+      .nightMode .english { color: #d1d5db; }
+      .nightMode .grammar { color: #fbbf24; background: #2d2310; }
+      .nightMode .focus-block { background: #262626; }
+      .nightMode .focus-reading { color: #9ca3af; }
+      .nightMode .focus-glosses { color: #e5e7eb; }
+      .nightMode .focus-glosses i { color: #9ca3af; }
+      .nightMode .kanji-row { background: #262626; }
+      .nightMode .kanji-meanings { color: #e5e7eb; }
+      .nightMode .kanji-readings { color: #9ca3af; }
+      .nightMode .source { color: #6b7280; }
+      .nightMode ruby rt { color: #9ca3af; }
     """.trimIndent()
   }
 
@@ -128,8 +210,10 @@ class AnkiBridgeModule : Module() {
         arrayOf(PRODUCTION_BACK),
         PUREYAA_CSS,
         null,
-        // sort by JapanesePlain (index 3) so the browser sorts cards by sentence
-        3,
+        // Sort by FocusWord (index 6) so the browser groups cards that mine
+        // the same target word together — easier to spot duplicates than
+        // the HTML-laden SentenceFront/Back fields.
+        6,
       ) ?: error("Failed to create model '$PUREYAA_MODEL_NAME'")
       Log.d(TAG, "created model '$PUREYAA_MODEL_NAME' (id=$id)")
       id
