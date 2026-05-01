@@ -1,0 +1,7 @@
+{
+  "name": "anki-bridge",
+  "version": "1.0.0",
+  "description": "Local Expo Module: direct calls into AnkiDroid via the AddContentApi.",
+  "main": "src/index.ts",
+  "private": true
+}
