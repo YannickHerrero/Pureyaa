@@ -28,19 +28,47 @@ function escapeHtml(s: string): string {
  * Wrap each kanji-bearing token in <ruby>surface<rt>reading</rt></ruby>;
  * leave kana-only tokens as plain (escaped) text. The reading is converted
  * from kuromoji's katakana to hiragana for the standard mining-card look.
+ *
+ * If `focusSpan` is given, the inclusive token range it points to is wrapped
+ * in a single `<span class="focus">…</span>` so the card can underline the
+ * focus word as one continuous mark across multiple tokens.
  */
-export function buildRubyHtml(tokens: Token[]): string {
+export function buildRubyHtml(tokens: Token[], focusSpan?: [number, number]): string {
   const parts: string[] = [];
-  for (const t of tokens) {
+  const [fs, fe] = focusSpan ?? [-1, -1];
+  for (let i = 0; i < tokens.length; i++) {
+    if (i === fs) parts.push('<span class="focus">');
+    const t = tokens[i];
     const surface = t.surface;
-    if (!surface) continue;
-    const hasKanji = KANJI_RANGE.test(surface);
-    const reading = t.reading ? katakanaToHiragana(t.reading) : '';
-    if (hasKanji && reading && reading !== surface) {
-      parts.push(`<ruby>${escapeHtml(surface)}<rt>${escapeHtml(reading)}</rt></ruby>`);
-    } else {
-      parts.push(escapeHtml(surface));
+    if (surface) {
+      const hasKanji = KANJI_RANGE.test(surface);
+      const reading = t.reading ? katakanaToHiragana(t.reading) : '';
+      if (hasKanji && reading && reading !== surface) {
+        parts.push(`<ruby>${escapeHtml(surface)}<rt>${escapeHtml(reading)}</rt></ruby>`);
+      } else {
+        parts.push(escapeHtml(surface));
+      }
     }
+    if (i === fe) parts.push('</span>');
+  }
+  return parts.join('');
+}
+
+/**
+ * Plain-text version of the sentence (no furigana), with the focus tokens
+ * wrapped in `<span class="focus">…</span>` for underlining on the card.
+ */
+export function buildPlainSentenceHtml(
+  tokens: Token[],
+  focusSpan: [number, number],
+): string {
+  const parts: string[] = [];
+  const [fs, fe] = focusSpan;
+  for (let i = 0; i < tokens.length; i++) {
+    if (i === fs) parts.push('<span class="focus">');
+    const surface = tokens[i].surface;
+    if (surface) parts.push(escapeHtml(surface));
+    if (i === fe) parts.push('</span>');
   }
   return parts.join('');
 }
