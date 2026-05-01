@@ -311,6 +311,13 @@ function Player({
           style={StyleSheet.absoluteFill}
           onPress={() => setShowControls((s) => !s)}
         />
+        {!isPlaying && (
+          <View style={styles.playOverlay} pointerEvents="box-none">
+            <Pressable style={styles.playButton} onPress={() => player.play()}>
+              <Text style={styles.playIcon}>▶</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
       <View style={styles.subtitleArea}>
         <SubtitlePane
@@ -363,6 +370,20 @@ const styles = StyleSheet.create({
   loading: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
   errorText: { color: '#f87171', padding: 16 },
   videoArea: { backgroundColor: '#000' },
+  playOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playButton: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playIcon: { color: '#fff', fontSize: 30, marginLeft: 4 },
   subtitleArea: {
     flex: 1,
     backgroundColor: '#0a0a0a',
