@@ -181,6 +181,7 @@ function Player({
   const [popup, setPopup] = useState<{ cue: Cue; tokenIndex: number } | null>(null);
   const [retimerOpen, setRetimerOpen] = useState(false);
   const [retimer, setRetimer] = useState<RetimerState>(entry.retimerState);
+  const [showControls, setShowControls] = useState(true);
   const lastAutoPausedCueIndex = useRef<number>(-1);
   const lastProgressSavedAt = useRef<number>(0);
   const latestProgressRef = useRef<number>(entry.watchProgressPercent);
@@ -299,14 +300,17 @@ function Player({
   return (
     <View style={styles.root}>
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={[styles.videoArea, { width: screenWidth, height: videoHeight }]}>
+      <Pressable
+        style={[styles.videoArea, { width: screenWidth, height: videoHeight }]}
+        onPress={() => setShowControls((s) => !s)}
+      >
         <VideoView
           style={{ width: '100%', height: '100%' }}
           player={player}
           contentFit="contain"
           nativeControls={false}
         />
-      </View>
+      </Pressable>
       <View style={styles.subtitleArea}>
         <SubtitlePane
           cue={currentCue}
@@ -317,22 +321,24 @@ function Player({
           }}
         />
       </View>
-      <Controls
-        isPlaying={isPlaying}
-        currentMs={currentMs}
-        durationMs={durationMs > 0 ? durationMs : entry.durationSeconds * 1000}
-        cues={cues}
-        retimer={retimer}
-        currentCueIndex={currentCueIndex}
-        onPlayPause={() => (isPlaying ? player.pause() : player.play())}
-        onSeekMs={(ms) => {
-          player.currentTime = ms / 1000;
-        }}
-        onOpenRetimer={() => {
-          player.pause();
-          setRetimerOpen(true);
-        }}
-      />
+      {showControls && (
+        <Controls
+          isPlaying={isPlaying}
+          currentMs={currentMs}
+          durationMs={durationMs > 0 ? durationMs : entry.durationSeconds * 1000}
+          cues={cues}
+          retimer={retimer}
+          currentCueIndex={currentCueIndex}
+          onPlayPause={() => (isPlaying ? player.pause() : player.play())}
+          onSeekMs={(ms) => {
+            player.currentTime = ms / 1000;
+          }}
+          onOpenRetimer={() => {
+            player.pause();
+            setRetimerOpen(true);
+          }}
+        />
+      )}
       <RetimerModal
         visible={retimerOpen}
         currentMs={currentMs}
