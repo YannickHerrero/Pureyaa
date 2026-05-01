@@ -300,17 +300,18 @@ function Player({
   return (
     <View style={styles.root}>
       <Stack.Screen options={{ headerShown: false }} />
-      <Pressable
-        style={[styles.videoArea, { width: screenWidth, height: videoHeight }]}
-        onPress={() => setShowControls((s) => !s)}
-      >
+      <View style={[styles.videoArea, { width: screenWidth, height: videoHeight }]}>
         <VideoView
           style={{ width: '100%', height: '100%' }}
           player={player}
           contentFit="contain"
           nativeControls={false}
         />
-      </Pressable>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => setShowControls((s) => !s)}
+        />
+      </View>
       <View style={styles.subtitleArea}>
         <SubtitlePane
           cue={currentCue}
