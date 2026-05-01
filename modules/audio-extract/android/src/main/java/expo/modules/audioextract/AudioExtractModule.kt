@@ -156,7 +156,7 @@ class AudioExtractModule : Module() {
       muxer.release()
     }
     Log.d(TAG, "remux done: $written samples → $outAbsolutePath")
-    return outAbsolutePath
+    return "file://$outAbsolutePath"
   }
 
   /**
@@ -182,6 +182,16 @@ class AudioExtractModule : Module() {
     val sampleRate = audioFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
     val channelCount = audioFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
     Log.d(TAG, "transcodeToAac($inputMime, ${sampleRate}Hz, ${channelCount}ch) → $outAbsolutePath")
+
+    // AAC LC tops out at 6 channels. 7.1+ (8-channel) sources need to be
+    // downmixed before they can be encoded — we don't do that yet, so fail
+    // with a clear message instead of a generic encoder.configure throw.
+    if (channelCount > 6) {
+      throw IllegalStateException(
+        "Audio has $channelCount channels; AAC LC supports at most 6. " +
+          "Re-encode the source to stereo or 5.1 first.",
+      )
+    }
 
     val decoder = MediaCodec.createDecoderByType(inputMime).apply {
       configure(audioFormat, null, null, 0)
@@ -227,10 +237,14 @@ class AudioExtractModule : Module() {
           val encIdx = encoder.dequeueOutputBuffer(info, 0)
           if (encIdx == MediaCodec.INFO_TRY_AGAIN_LATER) break
           if (encIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-            muxerTrack = muxer.addTrack(encoder.outputFormat)
-            muxer.start()
-            muxerStarted = true
-            Log.d(TAG, "encoder output format ready, muxer started")
+            // Some encoders emit this twice — guard so we don't double-add
+            // the track or restart an already-running muxer.
+            if (!muxerStarted) {
+              muxerTrack = muxer.addTrack(encoder.outputFormat)
+              muxer.start()
+              muxerStarted = true
+              Log.d(TAG, "encoder output format ready, muxer started")
+            }
             continue
           }
           if (encIdx < 0) continue
@@ -318,6 +332,6 @@ class AudioExtractModule : Module() {
     }
 
     Log.d(TAG, "transcodeToAac done: $samplesWritten AAC frames → $outAbsolutePath")
-    return outAbsolutePath
+    return "file://$outAbsolutePath"
   }
 }
