@@ -62,11 +62,23 @@ export async function sendCardToAnki(
   await AnkiClient.ensurePureyaaModel();
   await AnkiClient.ensureDeck(settings.defaultDeckName);
 
+  // AnkiDroid may store the file under a slightly different name than we
+  // asked for (e.g. extension handled by the provider, dedup suffix). The
+  // return value of addMediaFromUri is the already-formatted reference
+  // string `<img src="…" />` / `[sound:…]` built from the *actually stored*
+  // filename — that's what the card field has to point to.
+  const fieldsWithMedia = { ...fields };
   for (const m of assets.media) {
-    await AnkiClient.storeMedia(m.base64, m.filename, pickMimeType(m.filename));
+    const mimeType = pickMimeType(m.filename);
+    const ref = await AnkiClient.storeMedia(m.base64, m.filename, mimeType);
+    if (mimeType === 'image') {
+      fieldsWithMedia.Image = ref;
+    } else {
+      fieldsWithMedia.Audio = ref;
+    }
   }
 
-  const orderedFields = FIELD_ORDER.map((k) => fields[k] ?? '');
+  const orderedFields = FIELD_ORDER.map((k) => fieldsWithMedia[k] ?? '');
 
   return AnkiClient.addNote(
     settings.defaultDeckName,
