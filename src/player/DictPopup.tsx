@@ -43,8 +43,9 @@ export function DictPopup({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.popup} onPress={() => {}}>
+      <View style={styles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.dialog}>
           <View style={styles.header}>
             <Text style={styles.tappedWord}>{tappedWord}</Text>
             <Pressable onPress={onClose} hitSlop={8}>
@@ -61,7 +62,10 @@ export function DictPopup({
                 active={activeIdx}
                 onSelect={setActiveIdx}
               />
-              <ScrollView style={styles.body}>
+              <ScrollView
+                style={styles.body}
+                contentContainerStyle={styles.bodyContent}
+              >
                 <MatchView
                   match={matches[activeIdx]}
                   cue={cue}
@@ -70,8 +74,8 @@ export function DictPopup({
               </ScrollView>
             </>
           )}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -216,18 +220,21 @@ function DictEntryView({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
   },
-  popup: {
+  dialog: {
     backgroundColor: '#0f0f0f',
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    maxHeight: '70%',
-    minHeight: 200,
+    borderRadius: 12,
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '85%',
     padding: 16,
     gap: 12,
   },
+  bodyContent: { paddingBottom: 8 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
