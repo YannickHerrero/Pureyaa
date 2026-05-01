@@ -96,12 +96,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultSubtitleMode: 'jp',
 };
 
+export type AudioMode = 'original' | 'tts' | 'none';
+
 export interface AnkiSettings {
   ankiConnectUrl: string;
   defaultDeckName: string;
   audioPaddingBeforeMs: number;
   audioPaddingAfterMs: number;
-  includeAudio: boolean;
+  audioMode: AudioMode;
+  ttsVoice: string;
 }
 
 export const DEFAULT_ANKI_SETTINGS: AnkiSettings = {
@@ -111,5 +114,17 @@ export const DEFAULT_ANKI_SETTINGS: AnkiSettings = {
   defaultDeckName: 'Default',
   audioPaddingBeforeMs: 500,
   audioPaddingAfterMs: 500,
-  includeAudio: true,
+  audioMode: 'original',
+  ttsVoice: 'ja-JP-Chirp3-HD-Kore',
 };
+
+export const TTS_VOICES: { id: string; label: string }[] = [
+  { id: 'ja-JP-Chirp3-HD-Kore', label: 'Kore (F, Chirp 3 HD)' },
+  { id: 'ja-JP-Chirp3-HD-Aoede', label: 'Aoede (F, Chirp 3 HD)' },
+  { id: 'ja-JP-Chirp3-HD-Leda', label: 'Leda (F, Chirp 3 HD)' },
+  { id: 'ja-JP-Chirp3-HD-Zephyr', label: 'Zephyr (F, Chirp 3 HD)' },
+  { id: 'ja-JP-Chirp3-HD-Puck', label: 'Puck (M, Chirp 3 HD)' },
+  { id: 'ja-JP-Chirp3-HD-Charon', label: 'Charon (M, Chirp 3 HD)' },
+  { id: 'ja-JP-Chirp3-HD-Fenrir', label: 'Fenrir (M, Chirp 3 HD)' },
+  { id: 'ja-JP-Chirp3-HD-Orus', label: 'Orus (M, Chirp 3 HD)' },
+];
