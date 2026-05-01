@@ -85,18 +85,24 @@ function TokenChip({ token, onPress }: { token: Token; onPress?: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 16, gap: 12 },
-  empty: { padding: 16 },
+  content: { padding: 16, gap: 12, alignItems: 'center' },
+  empty: { padding: 16, alignItems: 'center' },
   placeholder: { color: '#444' },
-  line: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end' },
-  cueText: { color: '#fff', fontSize: 22, lineHeight: 32 },
-  enBlock: { gap: 6 },
-  translation: { color: '#cfcfcf', fontSize: 15, lineHeight: 22 },
+  line: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  cueText: { color: '#fff', fontSize: 22, lineHeight: 32, textAlign: 'center' },
+  enBlock: { gap: 6, alignItems: 'center' },
+  translation: { color: '#cfcfcf', fontSize: 15, lineHeight: 22, textAlign: 'center' },
   grammarNote: {
     color: '#fbbf24',
     fontSize: 13,
     lineHeight: 19,
     fontStyle: 'italic',
+    textAlign: 'center',
   },
   revealButton: {
     alignSelf: 'flex-start',
