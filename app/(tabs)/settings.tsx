@@ -22,11 +22,21 @@ import {
   getGoogleTtsApiKey,
   setGoogleTtsApiKey,
   clearGoogleTtsApiKey,
+  getWanikaniApiKey,
+  setWanikaniApiKey,
+  clearWanikaniApiKey,
 } from '@/storage/settings';
 import { getAnkiSettings, saveAnkiSettings } from '@/storage/ankiSettings';
 import { testApiKey } from '@/analysis/claude';
 import { AnkiClient } from '@/anki/client';
 import { synthesizeJapanese, testGoogleTts } from '@/anki/tts';
+import { fetchAllWanikaniKanji, testWanikaniApiKey } from '@/wanikani/api';
+import {
+  clearKanjiCache,
+  getKanjiCacheStats,
+  saveKanjiCache,
+  type KanjiCacheStats,
+} from '@/wanikani/cache';
 
 const VOICE_PREVIEW_TEXT = '今日はいい天気ですね。';
 
@@ -58,6 +68,11 @@ export default function SettingsScreen() {
   const [ttsKeyDirty, setTtsKeyDirty] = useState(false);
   const [ttsTesting, setTtsTesting] = useState(false);
   const [ttsResult, setTtsResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [wkKey, setWkKey] = useState<string>('');
+  const [wkSyncing, setWkSyncing] = useState(false);
+  const [wkProgress, setWkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [wkResult, setWkResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [wkStats, setWkStats] = useState<KanjiCacheStats | null>(null);
   const [previewLoadingVoice, setPreviewLoadingVoice] = useState<string | null>(null);
   const previewCacheRef = useRef<Map<string, string>>(new Map());
   const [previewUri, setPreviewUri] = useState<string | null>(null);
@@ -68,16 +83,20 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     (async () => {
-      const [s, a, k, t] = await Promise.all([
+      const [s, a, k, t, w, ws] = await Promise.all([
         getSettings(),
         getAnkiSettings(),
         getApiKey(),
         getGoogleTtsApiKey(),
+        getWanikaniApiKey(),
+        getKanjiCacheStats(),
       ]);
       setSettings(s);
       setAnki(a);
       setApiKeyState(k ?? '');
       setTtsKey(t ?? '');
+      setWkKey(w ?? '');
+      setWkStats(ws);
       setLoaded(true);
     })();
   }, []);
@@ -143,6 +162,40 @@ export default function SettingsScreen() {
       previewPlayer.play();
     } catch {
       // ignore — playback errors don't need to be surfaced
+    }
+  };
+
+  const onSyncWanikani = async () => {
+    const trimmed = wkKey.trim();
+    if (trimmed.length === 0) {
+      // Empty input means "disconnect"
+      await clearWanikaniApiKey();
+      await clearKanjiCache();
+      setWkStats(null);
+      setWkResult({ ok: true, message: 'WaniKani disconnected.' });
+      return;
+    }
+    setWkSyncing(true);
+    setWkResult(null);
+    setWkProgress(null);
+    try {
+      const user = await testWanikaniApiKey(trimmed);
+      await setWanikaniApiKey(trimmed);
+      const byChar = await fetchAllWanikaniKanji(trimmed, (done, total) => {
+        setWkProgress({ done, total });
+      });
+      await saveKanjiCache(byChar);
+      const stats = await getKanjiCacheStats();
+      setWkStats(stats);
+      setWkResult({
+        ok: true,
+        message: `${user.username} (level ${user.level}) — ${stats?.count ?? 0} kanji cached.`,
+      });
+    } catch (e) {
+      setWkResult({ ok: false, message: (e as Error).message });
+    } finally {
+      setWkSyncing(false);
+      setWkProgress(null);
     }
   };
 
@@ -411,6 +464,53 @@ export default function SettingsScreen() {
         )}
       </Section>
 
+      <Section title="WaniKani (kanji info on cards)">
+        <Label>Personal access token</Label>
+        <TextInput
+          value={wkKey}
+          onChangeText={(t) => {
+            setWkKey(t);
+            setWkResult(null);
+          }}
+          placeholder="paste from wanikani.com/settings/personal_access_tokens"
+          placeholderTextColor="#666"
+          secureTextEntry
+          style={styles.input}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <View style={styles.row}>
+          <Pressable
+            style={[styles.button, wkSyncing && styles.buttonDisabled]}
+            disabled={wkSyncing}
+            onPress={onSyncWanikani}
+          >
+            <Text style={styles.buttonText}>
+              {wkSyncing
+                ? wkProgress
+                  ? `Syncing… ${wkProgress.done}/${wkProgress.total}`
+                  : 'Syncing…'
+                : wkKey.trim().length === 0
+                  ? 'Disconnect'
+                  : wkStats
+                    ? 'Re-sync kanji'
+                    : 'Save & sync kanji'}
+            </Text>
+          </Pressable>
+        </View>
+        {wkStats && (
+          <Text style={styles.label}>
+            {wkStats.count} kanji cached · synced {formatRelative(wkStats.fetchedAt)}
+          </Text>
+        )}
+        {wkResult && (
+          <Text style={[styles.testResult, wkResult.ok ? styles.ok : styles.bad]}>
+            {wkResult.ok ? '✓ ' : '✗ '}
+            {wkResult.message}
+          </Text>
+        )}
+      </Section>
+
       <Section title="Playback">
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Auto-pause at end of subtitle line</Text>
@@ -452,6 +552,16 @@ function Label({ children }: { children: React.ReactNode }) {
 function parsePositiveInt(s: string): number {
   const n = parseInt(s.replace(/\D/g, ''), 10);
   return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function formatRelative(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  return months === 1 ? '1 month ago' : `${months} months ago`;
 }
 
 const styles = StyleSheet.create({
