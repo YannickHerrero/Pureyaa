@@ -18,13 +18,15 @@ import { SubtitlePane } from '@/player/SubtitlePane';
 import { DictPopup } from '@/player/DictPopup';
 import { Controls } from '@/player/Controls';
 import { RetimerModal } from '@/player/RetimerModal';
+import { AnkiPreviewSheet, type AnkiPreviewArgs } from '@/anki/AnkiPreviewSheet';
+import { getAnkiSettings } from '@/storage/ankiSettings';
 import { effectiveEndMs, findCueIndexAt } from '@/utils/time';
 import { getSettings } from '@/storage/settings';
 import { loadDictionaries } from '@/analysis/dict';
 import { deleteEntry, upsertEntry } from '@/storage/entries';
 import { uriExists } from '@/utils/uriCheck';
-import type { Cue, LibraryEntry, RetimerState, SubtitleMode } from '@/types';
-import { DEFAULT_SETTINGS } from '@/types';
+import type { AnkiSettings, Cue, LibraryEntry, RetimerState, SubtitleMode } from '@/types';
+import { DEFAULT_ANKI_SETTINGS, DEFAULT_SETTINGS } from '@/types';
 
 export default function PlayerScreen() {
   const { id, cueIndex } = useLocalSearchParams<{ id: string; cueIndex?: string }>();
@@ -184,6 +186,8 @@ function Player({
   const [retimerOpen, setRetimerOpen] = useState(false);
   const [retimer, setRetimer] = useState<RetimerState>(entry.retimerState);
   const [showControls, setShowControls] = useState(true);
+  const [ankiPreview, setAnkiPreview] = useState<AnkiPreviewArgs | null>(null);
+  const [ankiSettings, setAnkiSettings] = useState<AnkiSettings>(DEFAULT_ANKI_SETTINGS);
   const lastAutoPausedCueIndex = useRef<number>(-1);
   const lastProgressSavedAt = useRef<number>(0);
   const latestProgressRef = useRef<number>(entry.watchProgressPercent);
@@ -207,9 +211,10 @@ function Player({
 
   useEffect(() => {
     (async () => {
-      const s = await getSettings();
+      const [s, a] = await Promise.all([getSettings(), getAnkiSettings()]);
       setMode(s.defaultSubtitleMode);
       setAutoPause(s.autoPauseAtLineEnd);
+      setAnkiSettings(a);
       await loadDictionaries();
     })();
   }, []);
@@ -424,6 +429,17 @@ function Player({
         tokenIndex={popup?.tokenIndex ?? 0}
         sourceEntryId={entry.id}
         onClose={() => setPopup(null)}
+        onAddToAnki={(cue, dict, dictEntry) => {
+          setPopup(null);
+          setAnkiPreview({ cue, dict, dictEntry });
+        }}
+      />
+      <AnkiPreviewSheet
+        visible={ankiPreview !== null}
+        args={ankiPreview}
+        entry={entry}
+        settings={ankiSettings}
+        onClose={() => setAnkiPreview(null)}
       />
     </View>
   );
