@@ -2,6 +2,7 @@ package expo.modules.ankibridge
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.util.Base64
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -167,6 +168,28 @@ class AnkiBridgeModule : Module() {
         promise,
         PERMISSION,
       )
+    }
+
+    // SAF helper — not Anki-specific, but lives here so we don't have to
+    // ship a second native module just to call one ContentResolver method.
+    // expo-document-picker returns a content:// URI that is only readable
+    // for the current process; without this call the URI is dead after
+    // the app restarts and the user has to re-pick the file every time.
+    AsyncFunction("persistUriPermission") { uriString: String ->
+      val context = appContext.reactContext ?: error("No Android context available")
+      val uri = Uri.parse(uriString)
+      try {
+        context.contentResolver.takePersistableUriPermission(
+          uri,
+          Intent.FLAG_GRANT_READ_URI_PERMISSION,
+        )
+        Log.d(TAG, "persisted URI permission for $uri")
+      } catch (e: SecurityException) {
+        // Not a persistable URI (e.g. ACTION_GET_CONTENT instead of
+        // ACTION_OPEN_DOCUMENT). Don't fail the caller — the URI may
+        // still work for the current session.
+        Log.w(TAG, "could not persist URI permission for $uri: ${e.message}")
+      }
     }
 
     AsyncFunction("getDeckNames") {
