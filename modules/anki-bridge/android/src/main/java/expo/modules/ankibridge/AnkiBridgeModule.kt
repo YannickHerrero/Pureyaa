@@ -1,6 +1,7 @@
 package expo.modules.ankibridge
 
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.ichi2.anki.api.AddContentApi
 import expo.modules.kotlin.modules.Module
@@ -35,5 +36,26 @@ class AnkiBridgeModule : Module() {
         PERMISSION,
       )
     }
+
+    AsyncFunction("getDeckNames") {
+      val api = openApi()
+      api.deckList?.values?.toList() ?: emptyList()
+    }
+
+    AsyncFunction("getModelNames") {
+      val api = openApi()
+      api.modelList?.values?.toList() ?: emptyList()
+    }
+  }
+
+  private fun openApi(): AddContentApi {
+    val context = appContext.reactContext ?: error("No Android context available")
+    if (AddContentApi.getAnkiDroidPackageName(context) == null) {
+      error("AnkiDroid is not installed.")
+    }
+    if (ContextCompat.checkSelfPermission(context, PERMISSION) != PackageManager.PERMISSION_GRANTED) {
+      error("AnkiDroid permission not granted. Open Settings and tap \"Connect AnkiDroid\".")
+    }
+    return AddContentApi(context)
   }
 }
