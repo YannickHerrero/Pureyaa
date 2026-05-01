@@ -149,7 +149,7 @@ class AnkiBridgeModule : Module() {
       context.grantUriPermission(ankiPackage, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
 
       try {
-        val savedName = api.addMedia(uri, filename, mimeType)
+        val savedName = api.addMediaFromUri(uri, filename, mimeType)
           ?: error("AnkiDroid rejected media '$filename'")
         Log.d(TAG, "stored media '$filename' as '$savedName' (${tempFile.length()} bytes)")
         savedName
