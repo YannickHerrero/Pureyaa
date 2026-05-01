@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   Switch,
   ActivityIndicator,
 } from 'react-native';
+import { Directory, File, Paths } from 'expo-file-system';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import type { AnkiSettings, AppSettings, AudioMode, ModelId, SubtitleMode } from '@/types';
 import { DEFAULT_ANKI_SETTINGS, DEFAULT_SETTINGS, TTS_VOICES } from '@/types';
 import {
@@ -24,7 +26,16 @@ import {
 import { getAnkiSettings, saveAnkiSettings } from '@/storage/ankiSettings';
 import { testApiKey } from '@/analysis/claude';
 import { makeAnkiClient, AnkiConnectError } from '@/anki/client';
-import { testGoogleTts } from '@/anki/tts';
+import { synthesizeJapanese, testGoogleTts } from '@/anki/tts';
+
+const VOICE_PREVIEW_TEXT = '今日はいい天気ですね。';
+
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
 
 const MODELS: ModelId[] = ['haiku', 'sonnet', 'opus'];
 const SUB_MODES: SubtitleMode[] = ['jp', 'jp+en', 'en'];
@@ -47,6 +58,13 @@ export default function SettingsScreen() {
   const [ttsKeyDirty, setTtsKeyDirty] = useState(false);
   const [ttsTesting, setTtsTesting] = useState(false);
   const [ttsResult, setTtsResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [previewLoadingVoice, setPreviewLoadingVoice] = useState<string | null>(null);
+  const previewCacheRef = useRef<Map<string, string>>(new Map());
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const previewPlayer = useVideoPlayer(previewUri, (p) => {
+    p.loop = false;
+    p.muted = false;
+  });
 
   useEffect(() => {
     (async () => {
@@ -86,6 +104,45 @@ export default function SettingsScreen() {
       setTtsResult({ ok: false, message: (e as Error).message });
     } finally {
       setTtsTesting(false);
+    }
+  };
+
+  const playVoicePreview = async (voiceId: string) => {
+    const apiKey = ttsKey.trim();
+    if (!apiKey) return; // need a key to synthesize
+
+    let uri = previewCacheRef.current.get(voiceId);
+    if (!uri) {
+      setPreviewLoadingVoice(voiceId);
+      try {
+        const tts = await synthesizeJapanese({
+          text: VOICE_PREVIEW_TEXT,
+          voiceName: voiceId,
+          apiKey,
+          outputId: `preview_${voiceId}`,
+        });
+        const cacheDir = new Directory(Paths.cache, 'tts-preview');
+        if (!cacheDir.exists) cacheDir.create({ intermediates: true });
+        const file = new File(cacheDir, tts.filename);
+        if (file.exists) file.delete();
+        file.write(base64ToBytes(tts.base64));
+        uri = file.uri;
+        previewCacheRef.current.set(voiceId, uri);
+      } catch (e) {
+        setTtsResult({ ok: false, message: (e as Error).message });
+        return;
+      } finally {
+        setPreviewLoadingVoice(null);
+      }
+    }
+
+    try {
+      previewPlayer.pause();
+      previewPlayer.replace({ uri });
+      previewPlayer.currentTime = 0;
+      previewPlayer.play();
+    } catch {
+      // ignore — playback errors don't need to be surfaced
     }
   };
 
@@ -273,18 +330,28 @@ export default function SettingsScreen() {
               </Text>
             )}
 
-            <Label>TTS voice</Label>
+            <Label>TTS voice (tap to preview)</Label>
             <View style={styles.choiceRow}>
               {TTS_VOICES.map((v) => (
                 <Pressable
                   key={v.id}
                   style={[styles.choice, anki.ttsVoice === v.id && styles.choiceActive]}
-                  onPress={() => updateAnki({ ttsVoice: v.id })}
+                  onPress={async () => {
+                    await updateAnki({ ttsVoice: v.id });
+                    await playVoicePreview(v.id);
+                  }}
                 >
-                  <Text style={styles.choiceText}>{v.label}</Text>
+                  <View style={styles.choiceInner}>
+                    <Text style={styles.choiceText}>{v.label}</Text>
+                    {previewLoadingVoice === v.id && (
+                      <ActivityIndicator color="#fff" size="small" />
+                    )}
+                  </View>
                 </Pressable>
               ))}
             </View>
+            {/* Hidden VideoView is needed so the player can drive audio output */}
+            <VideoView player={previewPlayer} style={styles.hiddenPlayer} contentFit="contain" />
           </View>
         )}
 
@@ -427,4 +494,6 @@ const styles = StyleSheet.create({
   },
   toggleLabel: { color: '#fff', fontSize: 15, flex: 1, marginRight: 12 },
   ttsBlock: { gap: 8, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#1f2937' },
+  choiceInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  hiddenPlayer: { width: 0, height: 0 },
 });
