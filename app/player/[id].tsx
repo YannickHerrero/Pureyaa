@@ -13,6 +13,7 @@ import {
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as DocumentPicker from 'expo-document-picker';
+import { AnkiBridge } from 'anki-bridge';
 import * as NavigationBar from 'expo-navigation-bar';
 import { setStatusBarHidden } from 'expo-status-bar';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -130,6 +131,12 @@ function Relocate({
       });
       if (r.canceled) return;
       const uri = r.assets[0].uri;
+      // Video URIs aren't copied to cache (they'd be huge); persist the
+      // SAF permission so the URI keeps working after an app restart.
+      // No-ops for the subtitle path which already resolves to file://.
+      if (which === 'video') {
+        await AnkiBridge.persistUriPermission(uri);
+      }
       const updated: LibraryEntry =
         which === 'video' ? { ...entry, videoUri: uri } : { ...entry, subtitleUri: uri };
       await upsertEntry(updated);
