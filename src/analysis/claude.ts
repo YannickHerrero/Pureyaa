@@ -12,6 +12,7 @@ export interface TranslateOptions {
   cues: { index: number; text: string }[];
   signal?: AbortSignal;
   onItem?: (item: CueTranslation) => void;
+  onLog?: (msg: string) => void;
 }
 
 const MODEL_IDS: Record<ModelId, string> = {
@@ -74,19 +75,28 @@ function streamingPost(
 }
 
 export async function translateCues(opts: TranslateOptions): Promise<CueTranslation[]> {
-  const { apiKey, model, cues, signal, onItem } = opts;
+  const { apiKey, model, cues, signal, onItem, onLog } = opts;
   const userMessage = cues.map((c) => `[${c.index}] ${c.text}`).join('\n');
 
   const parser = new IncrementalArrayParser();
   const items: CueTranslation[] = [];
+  let parseFailures = 0;
   parser.onItem = (raw) => {
     const it = normalize(raw);
-    if (!it) return;
+    if (!it) {
+      parseFailures += 1;
+      onLog?.(`claude: object failed validation: ${JSON.stringify(raw).slice(0, 120)}`);
+      return;
+    }
     items.push(it);
     onItem?.(it);
   };
 
   let buffer = '';
+  let allText = '';
+  let chunkCount = 0;
+  let firstChunk = true;
+
   await streamingPost(
     'https://api.anthropic.com/v1/messages',
     JSON.stringify({
@@ -102,6 +112,11 @@ export async function translateCues(opts: TranslateOptions): Promise<CueTranslat
       'anthropic-version': '2023-06-01',
     },
     (chunk) => {
+      chunkCount += 1;
+      if (firstChunk) {
+        onLog?.(`claude: first chunk (${chunk.length} bytes)`);
+        firstChunk = false;
+      }
       buffer += chunk;
       let idx;
       while ((idx = buffer.indexOf('\n')) >= 0) {
@@ -113,7 +128,9 @@ export async function translateCues(opts: TranslateOptions): Promise<CueTranslat
         try {
           const evt = JSON.parse(payload);
           if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
-            parser.push(evt.delta.text ?? '');
+            const t = evt.delta.text ?? '';
+            allText += t;
+            parser.push(t);
           }
         } catch {
           // skip malformed line
@@ -122,6 +139,20 @@ export async function translateCues(opts: TranslateOptions): Promise<CueTranslat
     },
     signal,
   );
+
+  onLog?.(
+    `claude: stream done — ${chunkCount} chunks, ${allText.length} text chars, ` +
+      `${items.length} items, ${parseFailures} validation failures`,
+  );
+
+  if (items.length === 0) {
+    const head = allText.slice(0, 400);
+    throw new Error(
+      `Claude returned 0 valid translations. ` +
+        `Got ${allText.length} text chars, ${parseFailures} unrecognized objects. ` +
+        `First 400 chars of response: ${head || '(empty)'}`,
+    );
+  }
 
   return items;
 }
