@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
+import { AnkiBridge } from 'anki-bridge';
 import { detectFromFilename, titleFromFilename } from '@/utils/filenameDetect';
 import { getApiKey } from '@/storage/settings';
 
@@ -46,6 +47,8 @@ export default function AddScreen() {
       });
       if (r.canceled) return;
       const asset = r.assets[0];
+      // Take persistent permission so the URI keeps working after restart.
+      await AnkiBridge.persistUriPermission(asset.uri);
       const f: PickedFile = { uri: asset.uri, name: asset.name, size: asset.size };
       setVideo(f);
       const det = detectFromFilename(asset.name);
