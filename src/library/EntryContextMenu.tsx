@@ -64,6 +64,17 @@ export function EntryContextMenu({
     close();
   };
 
+  const onRelocateVideo = async () => {
+    const r = await DocumentPicker.getDocumentAsync({
+      type: 'video/*',
+      copyToCacheDirectory: false,
+    });
+    if (r.canceled) return;
+    await upsertEntry({ ...entry, videoUri: r.assets[0].uri });
+    onChanged();
+    close();
+  };
+
   const onReExtractThumb = async () => {
     try {
       const dest = await thumbnailPathFor(entry.id);
@@ -104,6 +115,7 @@ export function EntryContextMenu({
             <>
               <Text style={styles.title} numberOfLines={1}>{entry.title}</Text>
               <MenuItem label="Edit title" onPress={onEditTitle} />
+              <MenuItem label="Re-locate video file" onPress={onRelocateVideo} />
               <MenuItem label="Change thumbnail (pick image)" onPress={onChangeThumb} />
               <MenuItem label="Re-extract thumbnail (10% mark)" onPress={onReExtractThumb} />
               <MenuItem
