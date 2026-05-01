@@ -2,13 +2,16 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { extractAudio } from 'audio-extract';
 import { extractThumbnail } from '@/utils/thumbnail';
 import { uuid } from '@/utils/uuid';
+import { getGoogleTtsApiKey } from '@/storage/settings';
 import type { AnkiSettings, Cue, DictName, LibraryEntry } from '@/types';
 import type { DictEntry } from '@/analysis/dict';
 import { buildRubyHtml } from './ruby';
+import { synthesizeJapanese } from './tts';
 
 export interface CardMedia {
   filename: string;
   base64: string;
+  /** Empty string for TTS audio that lives only in memory. */
   localPath: string;
 }
 
@@ -100,16 +103,17 @@ export async function buildCardAssets(args: {
     throw new Error(`Image extraction failed: ${(e as Error).message}`);
   }
 
-  // Audio: skip entirely when disabled in settings
+  // Audio: dispatch on audioMode
   let audioPath: string | null = null;
   let audioFilename: string | null = null;
   let audioBase64: string | null = null;
-  if (settings.includeAudio) {
+
+  if (settings.audioMode === 'original') {
     const rawStart = Math.max(0, cue.startMs - settings.audioPaddingBeforeMs);
     const rawEnd = cue.endMs + settings.audioPaddingAfterMs;
     const cappedEnd = Math.min(rawEnd, rawStart + MAX_AUDIO_DURATION_MS);
     console.log(
-      `[buildCard] audio: startMs=${rawStart} endMs=${cappedEnd} ` +
+      `[buildCard] audio (original): startMs=${rawStart} endMs=${cappedEnd} ` +
         `(cue ${cue.startMs}..${cue.endMs}, padding ${settings.audioPaddingBeforeMs}/${settings.audioPaddingAfterMs}) ` +
         `\n  videoUri=${videoUri}\n  outPath=${audioRequestedPath}`,
     );
@@ -130,8 +134,28 @@ export async function buildCardAssets(args: {
     }
     audioFilename = audioPath.split('/').pop() ?? audioRequestedFilename;
     audioBase64 = await new File(audioPath).base64();
+  } else if (settings.audioMode === 'tts') {
+    console.log(`[buildCard] audio (tts): voice=${settings.ttsVoice} text="${cue.text}"`);
+    const apiKey = await getGoogleTtsApiKey();
+    if (!apiKey) {
+      throw new Error('Google TTS API key not set. Add it in Settings → Anki.');
+    }
+    try {
+      const tts = await synthesizeJapanese({
+        text: cue.text,
+        voiceName: settings.ttsVoice,
+        apiKey,
+        outputId: id,
+      });
+      audioFilename = tts.filename;
+      audioBase64 = tts.base64;
+      console.log(`[buildCard] tts ok → ${tts.filename} (${tts.base64.length} base64 chars)`);
+    } catch (e) {
+      console.error(`[buildCard] tts failed: ${(e as Error).message}`);
+      throw new Error(`TTS failed: ${(e as Error).message}`);
+    }
   } else {
-    console.log('[buildCard] audio: skipped (includeAudio is off)');
+    console.log('[buildCard] audio: skipped (audioMode is none)');
   }
 
   const imageBase64 = await new File(imagePath).base64();
@@ -156,8 +180,14 @@ export async function buildCardAssets(args: {
   const media: CardMedia[] = [
     { filename: imageFilename, base64: imageBase64, localPath: imagePath },
   ];
-  if (audioFilename && audioBase64 && audioPath) {
-    media.push({ filename: audioFilename, base64: audioBase64, localPath: audioPath });
+  if (audioFilename && audioBase64) {
+    media.push({
+      filename: audioFilename,
+      base64: audioBase64,
+      // TTS audio lives only in memory; localPath stays empty so cleanup
+      // is a no-op for it.
+      localPath: audioPath ?? '',
+    });
   }
 
   return {
@@ -174,6 +204,7 @@ export async function buildCardAssets(args: {
  */
 export function cleanupCardAssets(assets: CardAssets): void {
   for (const m of assets.media) {
+    if (!m.localPath) continue; // TTS audio has no on-disk file
     try {
       const f = new File(m.localPath);
       if (f.exists) f.delete();
