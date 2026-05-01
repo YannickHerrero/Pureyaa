@@ -6,7 +6,8 @@ import { getGoogleTtsApiKey } from '@/storage/settings';
 import { effectiveStartMs, effectiveEndMs } from '@/utils/time';
 import type { AnkiSettings, Cue, DictName, LibraryEntry } from '@/types';
 import type { DictEntry } from '@/analysis/dict';
-import { buildRubyHtml } from './ruby';
+import { buildPlainSentenceHtml, buildRubyHtml } from './ruby';
+import { buildKanjiListHtml } from './kanjiList';
 import { synthesizeJapanese } from './tts';
 
 export interface CardMedia {
@@ -171,16 +172,21 @@ export async function buildCardAssets(args: {
   const focusReadingRaw = dictEntry.readings[0] ?? '';
   const focusReading = katakanaToHiragana(focusReadingRaw);
 
+  const sentenceFront = buildPlainSentenceHtml(cue.tokens, tokenSpan);
+  const sentenceBack = buildRubyHtml(cue.tokens, tokenSpan);
+  const kanjiList = await buildKanjiListHtml(cue.text);
+
   const fields: Record<string, string> = {
     Image: `<img src="${imageFilename}">`,
     Audio: audioFilename ? `[sound:${audioFilename}]` : '',
-    JapaneseRuby: buildRubyHtml(cue.tokens),
-    JapanesePlain: cue.text,
+    SentenceFront: sentenceFront,
+    SentenceBack: sentenceBack,
     English: cue.translation || '',
     GrammarNote: cue.grammarNote || '',
     FocusWord: focusWord,
     FocusReading: focusReading,
     FocusGlosses: renderGlosses(dictEntry),
+    KanjiList: kanjiList,
     Source: formatSource(entry),
   };
 

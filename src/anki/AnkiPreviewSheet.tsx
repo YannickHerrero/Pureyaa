@@ -154,7 +154,6 @@ export function AnkiPreviewSheet(props: AnkiPreviewSheetProps) {
                   <Text style={styles.audioInfo}>Audio: not included</Text>
                 )}
 
-                <FieldEditor label="Japanese (plain)" value={phase.fields.JapanesePlain} onChange={(v) => setField('JapanesePlain', v)} />
                 <FieldEditor label="English" value={phase.fields.English} onChange={(v) => setField('English', v)} multiline />
                 <FieldEditor label="Grammar note" value={phase.fields.GrammarNote} onChange={(v) => setField('GrammarNote', v)} multiline />
                 <FieldEditor label="Focus word" value={phase.fields.FocusWord} onChange={(v) => setField('FocusWord', v)} />

@@ -11,13 +11,14 @@ export const PUREYAA_MODEL_NAME = 'Pureyaa Sentence';
 const FIELD_ORDER = [
   'Image',
   'Audio',
-  'JapaneseRuby',
-  'JapanesePlain',
+  'SentenceFront',
+  'SentenceBack',
   'English',
   'GrammarNote',
   'FocusWord',
   'FocusReading',
   'FocusGlosses',
+  'KanjiList',
   'Source',
 ] as const;
 
