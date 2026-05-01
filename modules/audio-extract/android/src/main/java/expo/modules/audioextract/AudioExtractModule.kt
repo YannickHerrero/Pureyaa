@@ -5,6 +5,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -71,14 +72,45 @@ class AudioExtractModule : Module() {
         extractor.release()
         throw IllegalStateException("No audio track found in source $srcUri")
       }
-      Log.d(TAG, "selected audio track $trackIndex (${audioFormat.getString(MediaFormat.KEY_MIME)})")
+      val mime = audioFormat.getString(MediaFormat.KEY_MIME) ?: ""
+      Log.d(TAG, "selected audio track $trackIndex ($mime)")
       extractor.selectTrack(trackIndex)
       extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
 
-      val outFile = File(outPath.removePrefix("file://"))
+      // MediaMuxer for MP4 supports AAC; for OGG container it supports Opus
+      // (API 29+) and Vorbis (API 21+, but rare). Pick the right container
+      // for this codec and rename the output file's extension to match.
+      val outputFormat: Int
+      val ext: String
+      when {
+        mime.equals("audio/mp4a-latm", true) || mime.equals("audio/aac", true) -> {
+          outputFormat = MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+          ext = "m4a"
+        }
+        mime.equals("audio/opus", true) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
+          outputFormat = MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG
+          ext = "ogg"
+        }
+        mime.equals("audio/vorbis", true) -> {
+          outputFormat = MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG
+          ext = "ogg"
+        }
+        else -> {
+          extractor.release()
+          throw IllegalStateException(
+            "Audio codec '$mime' can't be extracted without transcoding. " +
+              "Try a video with AAC or Opus audio.",
+          )
+        }
+      }
+
+      // Replace the extension on the requested output path with our chosen one.
+      val rawPath = outPath.removePrefix("file://")
+      val basePath = rawPath.replace(Regex("\\.[A-Za-z0-9]+$"), "")
+      val outFile = File("$basePath.$ext")
       outFile.parentFile?.mkdirs()
-      Log.d(TAG, "writing to ${outFile.absolutePath}")
-      val muxer = MediaMuxer(outFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+      Log.d(TAG, "writing to ${outFile.absolutePath} (container=$outputFormat)")
+      val muxer = MediaMuxer(outFile.absolutePath, outputFormat)
       val muxerTrack = muxer.addTrack(audioFormat)
       muxer.start()
 

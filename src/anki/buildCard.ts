@@ -79,13 +79,15 @@ export async function buildCardAssets(args: {
 
   const id = uuid().replace(/-/g, '').slice(0, 12);
   const imageFilename = `pureyaa_${id}.jpg`;
-  const audioFilename = `pureyaa_${id}.m4a`;
+  // Native module replaces this extension to match the actual codec
+  // (e.g. .ogg for Opus). We use the returned path to know the real one.
+  const audioRequestedFilename = `pureyaa_${id}.m4a`;
 
   const cacheDir = new Directory(Paths.cache, 'anki');
   if (!cacheDir.exists) cacheDir.create({ intermediates: true });
 
   const imagePath = new File(cacheDir, imageFilename).uri;
-  const audioPath = new File(cacheDir, audioFilename).uri;
+  const audioRequestedPath = new File(cacheDir, audioRequestedFilename).uri;
 
   // Image at cue midpoint
   const midMs = Math.max(0, Math.floor((cue.startMs + cue.endMs) / 2));
@@ -105,15 +107,16 @@ export async function buildCardAssets(args: {
   console.log(
     `[buildCard] audio: startMs=${rawStart} endMs=${cappedEnd} ` +
       `(cue ${cue.startMs}..${cue.endMs}, padding ${settings.audioPaddingBeforeMs}/${settings.audioPaddingAfterMs}) ` +
-      `\n  videoUri=${videoUri}\n  outPath=${audioPath}`,
+      `\n  videoUri=${videoUri}\n  outPath=${audioRequestedPath}`,
   );
+  let audioPath: string;
   try {
-    const result = await extractAudio(videoUri, {
+    audioPath = await extractAudio(videoUri, {
       startMs: rawStart,
       endMs: cappedEnd,
-      outPath: audioPath,
+      outPath: audioRequestedPath,
     });
-    console.log(`[buildCard] audio extracted ok → ${result}`);
+    console.log(`[buildCard] audio extracted ok → ${audioPath}`);
   } catch (e) {
     const err = e as Error;
     console.error(
@@ -122,6 +125,7 @@ export async function buildCardAssets(args: {
     if (err.stack) console.error(err.stack);
     throw new Error(`Audio extraction failed: ${err.message}`);
   }
+  const audioFilename = audioPath.split('/').pop() ?? audioRequestedFilename;
 
   const imageBase64 = await new File(imagePath).base64();
   const audioBase64 = await new File(audioPath).base64();
