@@ -215,12 +215,10 @@ function Player({
   }, []);
 
   useEffect(() => {
-    // Enter immersive mode while playing. Sticky-immersive on Android: a
-    // swipe from the edge briefly reveals the system nav without forcing
-    // a re-layout.
+    // Enter immersive mode while playing. With SDK 55's edge-to-edge default
+    // the OS handles swipe-to-reveal natively, so we only toggle visibility.
     setStatusBarHidden(true, 'fade');
     NavigationBar.setVisibilityAsync('hidden').catch(() => {});
-    NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => {});
     return () => {
       setStatusBarHidden(false, 'fade');
       NavigationBar.setVisibilityAsync('visible').catch(() => {});
