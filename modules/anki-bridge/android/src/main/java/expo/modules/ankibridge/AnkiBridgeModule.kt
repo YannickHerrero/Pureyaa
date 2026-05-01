@@ -1,11 +1,16 @@
 package expo.modules.ankibridge
 
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.util.Base64
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.ichi2.anki.api.AddContentApi
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import java.io.File
+import java.util.UUID
 
 class AnkiBridgeModule : Module() {
   companion object {
@@ -125,6 +130,53 @@ class AnkiBridgeModule : Module() {
       ) ?: error("Failed to create model '$PUREYAA_MODEL_NAME'")
       Log.d(TAG, "created model '$PUREYAA_MODEL_NAME' (id=$id)")
       id
+    }
+
+    AsyncFunction("storeMedia") { base64: String, filename: String, mimeType: String ->
+      val context = appContext.reactContext ?: error("No Android context available")
+      val api = openApi()
+
+      // Write the bytes to our cache via a FileProvider-shareable path so
+      // AnkiDroid can read them across the process boundary.
+      val cacheDir = File(context.cacheDir, "anki").apply { mkdirs() }
+      val tempFile = File(cacheDir, "${UUID.randomUUID()}_$filename")
+      tempFile.writeBytes(Base64.decode(base64, Base64.DEFAULT))
+
+      val authority = "${context.packageName}.ankifileprovider"
+      val uri = FileProvider.getUriForFile(context, authority, tempFile)
+
+      val ankiPackage = AddContentApi.getAnkiDroidPackageName(context)
+        ?: error("AnkiDroid is not installed.")
+      context.grantUriPermission(ankiPackage, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+      try {
+        val savedName = api.addMedia(uri, filename, mimeType)
+          ?: error("AnkiDroid rejected media '$filename'")
+        Log.d(TAG, "stored media '$filename' as '$savedName' (${tempFile.length()} bytes)")
+        savedName
+      } finally {
+        if (tempFile.exists()) tempFile.delete()
+      }
+    }
+
+    AsyncFunction("addNote") {
+      deckName: String,
+      modelName: String,
+      fields: List<String>,
+      tags: List<String> ->
+      val api = openApi()
+      val deckId = api.deckList?.entries?.find { it.value == deckName }?.key
+        ?: error("Deck '$deckName' not found in AnkiDroid.")
+      val modelId = api.modelList?.entries?.find { it.value == modelName }?.key
+        ?: error("Note type '$modelName' not found in AnkiDroid.")
+      val noteId = api.addNote(
+        modelId,
+        deckId,
+        fields.toTypedArray(),
+        tags.toSet(),
+      ) ?: error("AnkiDroid rejected addNote (likely a field/template mismatch).")
+      Log.d(TAG, "added note id=$noteId in deck='$deckName' model='$modelName'")
+      noteId
     }
   }
 
