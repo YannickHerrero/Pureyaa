@@ -162,6 +162,15 @@ class AudioExtractModule : Module() {
   /**
    * Decode the input audio with MediaCodec and re-encode as AAC, then mux into MP4.
    * Used for codecs MediaMuxer can't write directly (E-AC3, AC3, DTS, FLAC, MP3, ...).
+   *
+   * Pipeline order on every iteration:
+   *   1. Drain encoder → muxer (must run first to keep encoder input slots free)
+   *   2. Move decoder output → encoder input
+   *   3. Feed extractor → decoder input
+   *
+   * Doing (1) before (2) is critical — if we try to feed the encoder before
+   * draining it, the encoder fills its output buffers, then refuses input,
+   * which blocks the decoder, which deadlocks the whole pipeline.
    */
   private fun transcodeToAac(
     extractor: MediaExtractor,
@@ -202,33 +211,54 @@ class AudioExtractModule : Module() {
     var encoderEos = false
     val info = MediaCodec.BufferInfo()
     var samplesWritten = 0
+    val startedAt = System.currentTimeMillis()
 
     try {
-      while (!encoderEos) {
-        if (!extractorEos) {
-          val idx = decoder.dequeueInputBuffer(TIMEOUT_US)
-          if (idx >= 0) {
-            val buf = decoder.getInputBuffer(idx)!!
-            buf.clear()
-            val size = extractor.readSampleData(buf, 0)
-            val pts = extractor.sampleTime
-            if (size < 0 || (pts > endUs && pts != -1L)) {
-              decoder.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-              extractorEos = true
-            } else {
-              decoder.queueInputBuffer(idx, 0, size, pts, 0)
-              extractor.advance()
-            }
+      outerLoop@ while (!encoderEos) {
+        // Safety bail-out — for a sane clip (<30s), the whole transcode should
+        // be in the order of seconds. If we're past 2 minutes the pipeline is
+        // wedged; abort with a useful error rather than hang forever.
+        if (System.currentTimeMillis() - startedAt > 120_000L) {
+          throw IllegalStateException("Audio transcode timed out — pipeline is stuck.")
+        }
+
+        // 1. Drain encoder output → muxer (always first, non-blocking)
+        while (true) {
+          val encIdx = encoder.dequeueOutputBuffer(info, 0)
+          if (encIdx == MediaCodec.INFO_TRY_AGAIN_LATER) break
+          if (encIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+            muxerTrack = muxer.addTrack(encoder.outputFormat)
+            muxer.start()
+            muxerStarted = true
+            Log.d(TAG, "encoder output format ready, muxer started")
+            continue
+          }
+          if (encIdx < 0) continue
+          val outBuf = encoder.getOutputBuffer(encIdx)!!
+          if ((info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 &&
+            info.size > 0 &&
+            muxerStarted
+          ) {
+            muxer.writeSampleData(muxerTrack, outBuf, info)
+            samplesWritten++
+          }
+          encoder.releaseOutputBuffer(encIdx, false)
+          if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+            encoderEos = true
+            break@outerLoop
           }
         }
 
+        // 2. Move decoder output → encoder input (non-blocking dequeue;
+        //    short-blocking encoder input dequeue so a momentarily-full
+        //    encoder doesn't drop samples). Always release decoder output
+        //    so the decoder doesn't run out of buffers.
         if (!decoderEos) {
-          val decIdx = decoder.dequeueOutputBuffer(info, TIMEOUT_US)
+          val decIdx = decoder.dequeueOutputBuffer(info, 0)
           if (decIdx >= 0) {
+            val isDecEos = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
             val pcm = decoder.getOutputBuffer(decIdx)!!
-            val isDecoderEos = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-            // feed encoder
-            val encInIdx = encoder.dequeueInputBuffer(TIMEOUT_US)
+            val encInIdx = encoder.dequeueInputBuffer(50_000L)
             if (encInIdx >= 0) {
               val encIn = encoder.getInputBuffer(encInIdx)!!
               encIn.clear()
@@ -242,35 +272,30 @@ class AudioExtractModule : Module() {
                 0,
                 info.size,
                 info.presentationTimeUs,
-                if (isDecoderEos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0,
+                if (isDecEos) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0,
               )
-              if (isDecoderEos) decoderEos = true
-              decoder.releaseOutputBuffer(decIdx, false)
+              if (isDecEos) decoderEos = true
+            } else {
+              Log.w(TAG, "encoder input slot timed out — dropping decoded sample at ${info.presentationTimeUs}us")
             }
+            decoder.releaseOutputBuffer(decIdx, false)
           }
         }
 
-        val encIdx = encoder.dequeueOutputBuffer(info, TIMEOUT_US)
-        when {
-          encIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-            val newFormat = encoder.outputFormat
-            muxerTrack = muxer.addTrack(newFormat)
-            muxer.start()
-            muxerStarted = true
-            Log.d(TAG, "encoder output format ready, muxer started")
-          }
-          encIdx >= 0 -> {
-            val outBuf = encoder.getOutputBuffer(encIdx)!!
-            if ((info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 &&
-              info.size > 0 &&
-              muxerStarted
-            ) {
-              muxer.writeSampleData(muxerTrack, outBuf, info)
-              samplesWritten++
-            }
-            encoder.releaseOutputBuffer(encIdx, false)
-            if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-              encoderEos = true
+        // 3. Feed extractor → decoder input (non-blocking)
+        if (!extractorEos) {
+          val decInIdx = decoder.dequeueInputBuffer(0)
+          if (decInIdx >= 0) {
+            val buf = decoder.getInputBuffer(decInIdx)!!
+            buf.clear()
+            val size = extractor.readSampleData(buf, 0)
+            val pts = extractor.sampleTime
+            if (size < 0 || (pts > endUs && pts != -1L)) {
+              decoder.queueInputBuffer(decInIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+              extractorEos = true
+            } else {
+              decoder.queueInputBuffer(decInIdx, 0, size, pts, 0)
+              extractor.advance()
             }
           }
         }
