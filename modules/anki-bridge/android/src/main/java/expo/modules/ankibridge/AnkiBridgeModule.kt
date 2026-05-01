@@ -89,17 +89,20 @@ class AnkiBridgeModule : Module() {
 
     AsyncFunction("getDeckNames") {
       val api = openApi()
-      api.deckList?.values?.toList() ?: emptyList()
+      val decks: Map<Long, String>? = api.deckList
+      decks?.values?.toList() ?: emptyList<String>()
     }
 
     AsyncFunction("getModelNames") {
       val api = openApi()
-      api.modelList?.values?.toList() ?: emptyList()
+      val models: Map<Long, String>? = api.modelList
+      models?.values?.toList() ?: emptyList<String>()
     }
 
     AsyncFunction("ensureDeck") { name: String ->
       val api = openApi()
-      val existing = api.deckList?.entries?.find { it.value == name }?.key
+      val decks: Map<Long, String>? = api.deckList
+      val existing = decks?.entries?.find { it.value == name }?.key
       if (existing != null) {
         Log.d(TAG, "deck '$name' exists (id=$existing)")
         return@AsyncFunction existing
@@ -111,7 +114,8 @@ class AnkiBridgeModule : Module() {
 
     AsyncFunction("ensurePureyaaModel") {
       val api = openApi()
-      val existing = api.modelList?.entries?.find { it.value == PUREYAA_MODEL_NAME }?.key
+      val models: Map<Long, String>? = api.modelList
+      val existing = models?.entries?.find { it.value == PUREYAA_MODEL_NAME }?.key
       if (existing != null) {
         Log.d(TAG, "model '$PUREYAA_MODEL_NAME' exists (id=$existing)")
         return@AsyncFunction existing
@@ -160,9 +164,11 @@ class AnkiBridgeModule : Module() {
 
     AsyncFunction("addNote") { deckName: String, modelName: String, fields: List<String>, tags: List<String> ->
       val api = openApi()
-      val deckId = api.deckList?.entries?.find { it.value == deckName }?.key
+      val decks: Map<Long, String>? = api.deckList
+      val models: Map<Long, String>? = api.modelList
+      val deckId = decks?.entries?.find { it.value == deckName }?.key
         ?: error("Deck '$deckName' not found in AnkiDroid.")
-      val modelId = api.modelList?.entries?.find { it.value == modelName }?.key
+      val modelId = models?.entries?.find { it.value == modelName }?.key
         ?: error("Note type '$modelName' not found in AnkiDroid.")
       val noteId = api.addNote(
         modelId,
