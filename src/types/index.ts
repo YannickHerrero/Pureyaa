@@ -95,3 +95,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoPauseAtLineEnd: false,
   defaultSubtitleMode: 'jp',
 };
+
+export interface AnkiSettings {
+  ankiConnectUrl: string;
+  defaultDeckName: string;
+  audioPaddingBeforeMs: number;
+  audioPaddingAfterMs: number;
+}
+
+export const DEFAULT_ANKI_SETTINGS: AnkiSettings = {
+  ankiConnectUrl: 'http://127.0.0.1:8765',
+  defaultDeckName: 'Pureyaa',
+  audioPaddingBeforeMs: 500,
+  audioPaddingAfterMs: 500,
+};
