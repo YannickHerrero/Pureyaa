@@ -3,6 +3,7 @@ import { extractAudio } from 'audio-extract';
 import { extractThumbnail } from '@/utils/thumbnail';
 import { uuid } from '@/utils/uuid';
 import { getGoogleTtsApiKey } from '@/storage/settings';
+import { effectiveStartMs, effectiveEndMs } from '@/utils/time';
 import type { AnkiSettings, Cue, DictName, LibraryEntry } from '@/types';
 import type { DictEntry } from '@/analysis/dict';
 import { buildRubyHtml } from './ruby';
@@ -109,12 +110,18 @@ export async function buildCardAssets(args: {
   let audioBase64: string | null = null;
 
   if (settings.audioMode === 'original') {
-    const rawStart = Math.max(0, cue.startMs - settings.audioPaddingBeforeMs);
-    const rawEnd = cue.endMs + settings.audioPaddingAfterMs;
+    // Cue times are in subtitle clock; the video file is in video clock.
+    // Apply the retimer so the extracted clip lines up with what the user
+    // actually heard while watching the cue.
+    const cueStartV = effectiveStartMs(cue, entry.retimerState);
+    const cueEndV = effectiveEndMs(cue, entry.retimerState);
+    const rawStart = Math.max(0, cueStartV - settings.audioPaddingBeforeMs);
+    const rawEnd = cueEndV + settings.audioPaddingAfterMs;
     const cappedEnd = Math.min(rawEnd, rawStart + MAX_AUDIO_DURATION_MS);
     console.log(
       `[buildCard] audio (original): startMs=${rawStart} endMs=${cappedEnd} ` +
-        `(cue ${cue.startMs}..${cue.endMs}, padding ${settings.audioPaddingBeforeMs}/${settings.audioPaddingAfterMs}) ` +
+        `(cue sub ${cue.startMs}..${cue.endMs}, video ${cueStartV}..${cueEndV}, ` +
+        `padding ${settings.audioPaddingBeforeMs}/${settings.audioPaddingAfterMs}) ` +
         `\n  videoUri=${videoUri}\n  outPath=${audioRequestedPath}`,
     );
     try {
