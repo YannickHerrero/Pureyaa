@@ -139,6 +139,7 @@ export default function AnalyzeScreen() {
 
       const onLog = (text: string) => {
         const ts = (Date.now() - startTs) / 1000;
+        console.log(`[analyze ${ts.toFixed(1)}s] ${text}`);
         setState((s) => ({ ...s, logs: [...s.logs, { ts, text }] }));
       };
       const onProgress = (e: ProgressEvent) => {
@@ -178,10 +179,13 @@ export default function AnalyzeScreen() {
           onProgress,
         });
       } catch (e) {
+        const err = e as Error;
+        console.error('[analyze] translation failed:', err);
+        if (err.stack) console.error(err.stack);
         setState((s) => ({
           ...s,
           phase: 'translation-failed',
-          error: (e as Error).message,
+          error: err.message,
         }));
         return;
       }
