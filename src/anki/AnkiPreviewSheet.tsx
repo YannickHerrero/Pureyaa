@@ -137,7 +137,11 @@ export function AnkiPreviewSheet(props: AnkiPreviewSheetProps) {
             >
               <ScrollView contentContainerStyle={styles.scrollContent}>
                 <Image source={{ uri: phase.assets.imageLocalUri }} style={styles.preview} />
-                <Text style={styles.audioInfo}>Audio: {phase.assets.media[1]?.filename}</Text>
+                {phase.assets.media.length > 1 ? (
+                  <Text style={styles.audioInfo}>Audio: {phase.assets.media[1].filename}</Text>
+                ) : (
+                  <Text style={styles.audioInfo}>Audio: not included</Text>
+                )}
 
                 <FieldEditor label="Japanese (plain)" value={phase.fields.JapanesePlain} onChange={(v) => setField('JapanesePlain', v)} />
                 <FieldEditor label="English" value={phase.fields.English} onChange={(v) => setField('English', v)} multiline />
