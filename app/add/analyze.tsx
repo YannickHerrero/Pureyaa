@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+} from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { runAnalysis, type ProgressEvent } from '@/analysis/orchestrator';
 import { getApiKey, getSettings } from '@/storage/settings';
@@ -16,6 +23,11 @@ import { uuid } from '@/utils/uuid';
 
 type Phase = 'idle' | 'tokenizing' | 'translating' | 'finalizing' | 'done' | 'failed';
 
+interface LogEntry {
+  ts: number;
+  text: string;
+}
+
 interface ProgressState {
   phase: Phase;
   tokenized: number;
@@ -24,6 +36,7 @@ interface ProgressState {
   translatedTotal: number;
   latestText: string;
   error: string | null;
+  logs: LogEntry[];
 }
 
 const INITIAL: ProgressState = {
@@ -34,6 +47,7 @@ const INITIAL: ProgressState = {
   translatedTotal: 0,
   latestText: '',
   error: null,
+  logs: [],
 };
 
 export default function AnalyzeScreen() {
@@ -51,6 +65,7 @@ export default function AnalyzeScreen() {
   const abortRef = useRef<AbortController | null>(null);
 
   const start = async () => {
+    const startTs = Date.now();
     setState({ ...INITIAL, phase: 'tokenizing' });
     const ctl = new AbortController();
     abortRef.current = ctl;
@@ -64,6 +79,10 @@ export default function AnalyzeScreen() {
         apiKey,
         model: settings.modelId,
         signal: ctl.signal,
+        onLog: (text: string) => {
+          const ts = (Date.now() - startTs) / 1000;
+          setState((s) => ({ ...s, logs: [...s.logs, { ts, text }] }));
+        },
         onProgress: (e: ProgressEvent) => {
           setState((s) => {
             if (e.phase === 'tokenizing') {
@@ -190,7 +209,34 @@ export default function AnalyzeScreen() {
             </Pressable>
           </View>
         )}
+        <DebugLog logs={state.logs} />
       </View>
+    </View>
+  );
+}
+
+function DebugLog({ logs }: { logs: LogEntry[] }) {
+  const scrollRef = useRef<ScrollView | null>(null);
+  return (
+    <View style={styles.debug}>
+      <Text style={styles.debugTitle}>Debug log</Text>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.debugScroll}
+        contentContainerStyle={styles.debugContent}
+        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+      >
+        {logs.length === 0 ? (
+          <Text style={styles.debugEmpty}>(waiting for events)</Text>
+        ) : (
+          logs.map((l, i) => (
+            <Text key={i} style={styles.debugLine}>
+              <Text style={styles.debugTs}>{l.ts.toFixed(1).padStart(5, ' ')}s </Text>
+              {l.text}
+            </Text>
+          ))
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -267,4 +313,19 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   retryText: { color: '#fff', fontWeight: '600' },
+  debug: {
+    marginTop: 16,
+    backgroundColor: '#0a0a0a',
+    borderRadius: 8,
+    borderColor: '#222',
+    borderWidth: 1,
+    padding: 12,
+    gap: 6,
+  },
+  debugTitle: { color: '#888', fontSize: 12, fontWeight: '600', letterSpacing: 0.5 },
+  debugScroll: { maxHeight: 200 },
+  debugContent: { gap: 2 },
+  debugEmpty: { color: '#444', fontSize: 12, fontStyle: 'italic' },
+  debugLine: { color: '#9ca3af', fontFamily: 'monospace', fontSize: 11, lineHeight: 16 },
+  debugTs: { color: '#6b7280' },
 });
