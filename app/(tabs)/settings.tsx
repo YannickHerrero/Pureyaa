@@ -179,6 +179,14 @@ export default function SettingsScreen() {
       </Section>
 
       <Section title="Anki">
+        <View style={styles.toggleRow}>
+          <Text style={styles.toggleLabel}>Include audio in cards</Text>
+          <Switch
+            value={anki.includeAudio}
+            onValueChange={(v) => updateAnki({ includeAudio: v })}
+          />
+        </View>
+
         <Label>AnkiConnect URL</Label>
         <TextInput
           value={anki.ankiConnectUrl}
