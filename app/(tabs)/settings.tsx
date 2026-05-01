@@ -9,8 +9,8 @@ import {
   Switch,
   ActivityIndicator,
 } from 'react-native';
-import type { AppSettings, ModelId, SubtitleMode } from '@/types';
-import { DEFAULT_SETTINGS } from '@/types';
+import type { AnkiSettings, AppSettings, ModelId, SubtitleMode } from '@/types';
+import { DEFAULT_ANKI_SETTINGS, DEFAULT_SETTINGS } from '@/types';
 import {
   getSettings,
   saveSettings,
@@ -18,6 +18,7 @@ import {
   setApiKey,
   clearApiKey,
 } from '@/storage/settings';
+import { getAnkiSettings, saveAnkiSettings } from '@/storage/ankiSettings';
 import { testApiKey } from '@/analysis/claude';
 
 const MODELS: ModelId[] = ['haiku', 'sonnet', 'opus'];
@@ -31,6 +32,7 @@ const MODE_LABELS: Record<SubtitleMode, string> = {
 
 export default function SettingsScreen() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [anki, setAnki] = useState<AnkiSettings>(DEFAULT_ANKI_SETTINGS);
   const [apiKey, setApiKeyState] = useState<string>('');
   const [keyDirty, setKeyDirty] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -39,12 +41,19 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     (async () => {
-      const [s, k] = await Promise.all([getSettings(), getApiKey()]);
+      const [s, a, k] = await Promise.all([getSettings(), getAnkiSettings(), getApiKey()]);
       setSettings(s);
+      setAnki(a);
       setApiKeyState(k ?? '');
       setLoaded(true);
     })();
   }, []);
+
+  const updateAnki = async (patch: Partial<AnkiSettings>) => {
+    const next = { ...anki, ...patch };
+    setAnki(next);
+    await saveAnkiSettings(next);
+  };
 
   const update = async (patch: Partial<AppSettings>) => {
     const next = { ...settings, ...patch };
@@ -142,6 +151,44 @@ export default function SettingsScreen() {
         </View>
       </Section>
 
+      <Section title="Anki">
+        <Label>AnkiConnect URL</Label>
+        <TextInput
+          value={anki.ankiConnectUrl}
+          onChangeText={(t) => updateAnki({ ankiConnectUrl: t })}
+          style={styles.input}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="http://127.0.0.1:8765"
+          placeholderTextColor="#666"
+        />
+
+        <Label>Default deck</Label>
+        <TextInput
+          value={anki.defaultDeckName}
+          onChangeText={(t) => updateAnki({ defaultDeckName: t })}
+          style={styles.input}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+
+        <Label>Audio padding before (ms)</Label>
+        <TextInput
+          value={String(anki.audioPaddingBeforeMs)}
+          onChangeText={(t) => updateAnki({ audioPaddingBeforeMs: parsePositiveInt(t) })}
+          style={styles.input}
+          keyboardType="number-pad"
+        />
+
+        <Label>Audio padding after (ms)</Label>
+        <TextInput
+          value={String(anki.audioPaddingAfterMs)}
+          onChangeText={(t) => updateAnki({ audioPaddingAfterMs: parsePositiveInt(t) })}
+          style={styles.input}
+          keyboardType="number-pad"
+        />
+      </Section>
+
       <Section title="Playback">
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Auto-pause at end of subtitle line</Text>
@@ -178,6 +225,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Label({ children }: { children: React.ReactNode }) {
   return <Text style={styles.label}>{children}</Text>;
+}
+
+function parsePositiveInt(s: string): number {
+  const n = parseInt(s.replace(/\D/g, ''), 10);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 const styles = StyleSheet.create({
