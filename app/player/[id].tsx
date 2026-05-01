@@ -432,9 +432,9 @@ function Player({
         tokenIndex={popup?.tokenIndex ?? 0}
         sourceEntryId={entry.id}
         onClose={() => setPopup(null)}
-        onAddToAnki={(cue, dict, dictEntry) => {
+        onAddToAnki={(cue, dict, dictEntry, tokenSpan) => {
           setPopup(null);
-          setAnkiPreview({ cue, dict, dictEntry });
+          setAnkiPreview({ cue, dict, dictEntry, tokenSpan });
         }}
       />
       <AnkiPreviewSheet

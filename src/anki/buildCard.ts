@@ -76,10 +76,12 @@ export async function buildCardAssets(args: {
   cue: Cue;
   dict: DictName;
   dictEntry: DictEntry;
+  /** Token range of the focus word inside `cue.tokens`, inclusive on both ends. */
+  tokenSpan: [number, number];
   videoUri: string;
   settings: AnkiSettings;
 }): Promise<CardAssets> {
-  const { entry, cue, dictEntry, videoUri, settings } = args;
+  const { entry, cue, dictEntry, tokenSpan, videoUri, settings } = args;
 
   const id = uuid().replace(/-/g, '').slice(0, 12);
   const imageFilename = `pureyaa_${id}.jpg`;

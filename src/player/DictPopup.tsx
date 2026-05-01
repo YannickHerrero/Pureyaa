@@ -18,7 +18,12 @@ export interface DictPopupProps {
   tokenIndex: number;
   sourceEntryId: string;
   onClose: () => void;
-  onAddToAnki?: (cue: Cue, dict: DictMatch['dict'], entry: DictEntry) => void;
+  onAddToAnki?: (
+    cue: Cue,
+    dict: DictMatch['dict'],
+    entry: DictEntry,
+    tokenSpan: [number, number],
+  ) => void;
 }
 
 export function DictPopup({
@@ -126,7 +131,12 @@ function MatchView({
   match: DictMatch;
   cue: Cue | null;
   sourceEntryId: string;
-  onAddToAnki?: (cue: Cue, dict: DictMatch['dict'], entry: DictEntry) => void;
+  onAddToAnki?: (
+    cue: Cue,
+    dict: DictMatch['dict'],
+    entry: DictEntry,
+    tokenSpan: [number, number],
+  ) => void;
 }) {
   const entries = getEntries(match.entryIds, match.dict);
   if (entries.length === 0) {
@@ -141,6 +151,7 @@ function MatchView({
           dict={match.dict}
           cue={cue}
           sourceEntryId={sourceEntryId}
+          tokenSpan={match.tokenSpan}
           onAddToAnki={onAddToAnki}
         />
       ))}
@@ -153,13 +164,20 @@ function DictEntryView({
   dict,
   cue,
   sourceEntryId,
+  tokenSpan,
   onAddToAnki,
 }: {
   entry: DictEntry;
   dict: 'jmdict' | 'jmnedict';
   cue: Cue | null;
   sourceEntryId: string;
-  onAddToAnki?: (cue: Cue, dict: 'jmdict' | 'jmnedict', entry: DictEntry) => void;
+  tokenSpan: [number, number];
+  onAddToAnki?: (
+    cue: Cue,
+    dict: 'jmdict' | 'jmnedict',
+    entry: DictEntry,
+    tokenSpan: [number, number],
+  ) => void;
 }) {
   const [saved, setSaved] = useState(false);
   const surface = entry.forms[0] ?? entry.readings[0] ?? '';
@@ -200,7 +218,7 @@ function DictEntryView({
         <View style={styles.entryActions}>
           {onAddToAnki && cue ? (
             <Pressable
-              onPress={() => onAddToAnki(cue, dict, entry)}
+              onPress={() => onAddToAnki(cue, dict, entry, tokenSpan)}
               hitSlop={8}
               style={styles.ankiButton}
             >

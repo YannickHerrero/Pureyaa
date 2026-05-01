@@ -22,6 +22,8 @@ export interface AnkiPreviewArgs {
   cue: Cue;
   dict: DictName;
   dictEntry: DictEntry;
+  /** Token range of the focus word inside `cue.tokens`, inclusive on both ends. */
+  tokenSpan: [number, number];
 }
 
 export interface AnkiPreviewSheetProps {
@@ -54,6 +56,7 @@ export function AnkiPreviewSheet(props: AnkiPreviewSheetProps) {
           cue: args.cue,
           dict: args.dict,
           dictEntry: args.dictEntry,
+          tokenSpan: args.tokenSpan,
           videoUri: entry.videoUri,
           settings,
         });
