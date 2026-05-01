@@ -3,7 +3,7 @@
  *
  * Uses the `text:synthesize` REST endpoint with API key auth — no SDK,
  * just fetch with a JSON body. Response is `{ audioContent: <base64 mp3> }`,
- * which is exactly what AnkiConnect's `storeMediaFile` wants.
+ * which we hand straight to the Anki bridge's `storeMedia`.
  *
  * Pricing (May 2026): Chirp 3 HD voices are $30 per 1M chars; the first
  * 1M chars per month are free, which covers any realistic mining usage.
@@ -14,7 +14,7 @@ const ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize';
 export interface TtsResult {
   /** Filename to use in the [sound:...] field. */
   filename: string;
-  /** Base64-encoded mp3 — pass straight to storeMediaFile. */
+  /** Base64-encoded mp3 — pass straight to AnkiBridge.storeMedia. */
   base64: string;
 }
 
