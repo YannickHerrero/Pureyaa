@@ -109,7 +109,8 @@ const DICT_MODULES: Record<string, number> = {
 
 let tokenizerPromise: Promise<KuromojiTokenizer> | null = null;
 
-async function buildTokenizer(): Promise<KuromojiTokenizer> {
+async function buildTokenizer(log?: (s: string) => void): Promise<KuromojiTokenizer> {
+  log?.('resolving 12 kuromoji dict assets');
   const filenames = Object.keys(DICT_MODULES);
   const assets = await Asset.loadAsync(filenames.map((f) => DICT_MODULES[f]));
   const dicPath: Record<string, string> = {};
@@ -117,18 +118,22 @@ async function buildTokenizer(): Promise<KuromojiTokenizer> {
     dicPath[f] = assets[i].localUri ?? assets[i].uri;
   });
 
+  log?.('downloading + decompressing dict files');
   const km = await import('kuromoji-react-native');
   const builder = (km as any).default ?? km;
   return await new Promise<KuromojiTokenizer>((resolve, reject) => {
     builder.builder({ dicPath }).build((err: Error | null, tokenizer: KuromojiTokenizer) => {
       if (err) reject(err);
-      else resolve(tokenizer);
+      else {
+        log?.('tokenizer ready');
+        resolve(tokenizer);
+      }
     });
   });
 }
 
-export async function getTokenizer(): Promise<KuromojiTokenizer> {
-  if (!tokenizerPromise) tokenizerPromise = buildTokenizer();
+export async function getTokenizer(log?: (s: string) => void): Promise<KuromojiTokenizer> {
+  if (!tokenizerPromise) tokenizerPromise = buildTokenizer(log);
   return tokenizerPromise;
 }
 

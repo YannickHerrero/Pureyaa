@@ -1,7 +1,7 @@
 import { File } from 'expo-file-system';
 import type { AnalysisData, Cue, ModelId } from '@/types';
 import { parseSrt } from './srt';
-import { tokenize } from './tokenize';
+import { getTokenizer, tokenize } from './tokenize';
 import { buildMatches } from './match';
 import { loadDictionaries } from './dict';
 import { translateCues } from './claude';
@@ -20,23 +20,30 @@ export interface AnalyzeOptions {
   apiKey: string;
   model: ModelId;
   onProgress?: (e: ProgressEvent) => void;
+  onLog?: (text: string) => void;
   signal?: AbortSignal;
 }
 
 export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisData> {
-  const { subtitleUri, apiKey, model, onProgress, signal } = opts;
+  const { subtitleUri, apiKey, model, onProgress, onLog, signal } = opts;
+  const log = (s: string) => onLog?.(s);
 
-  // Step 1: read + parse SRT
+  log('reading + parsing SRT');
   const srtText = await new File(subtitleUri).text();
   const rawCues = parseSrt(srtText);
   if (rawCues.length === 0) {
     throw new Error('No cues found in subtitle file.');
   }
+  log(`parsed ${rawCues.length} cues`);
 
-  // Step 2: load dictionaries (idempotent)
+  log('loading JMdict + JMnedict bundles');
   await loadDictionaries();
+  log('dictionaries ready');
 
-  // Step 3: tokenize + match every cue
+  log('warming up kuromoji tokenizer');
+  await getTokenizer((m) => log(`kuromoji: ${m}`));
+
+  log(`tokenizing ${rawCues.length} cues`);
   const cues: Cue[] = [];
   for (let i = 0; i < rawCues.length; i++) {
     if (signal?.aborted) throw new Error('Cancelled');
@@ -55,8 +62,9 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisData> {
     });
     onProgress?.({ phase: 'tokenizing', processed: i + 1, total: rawCues.length });
   }
+  log('tokenization complete');
 
-  // Step 4: translate via Claude (streaming)
+  log(`requesting translation from Claude (${cues.length} lines)`);
   const byIndex = new Map<number, Cue>(cues.map((c) => [c.index, c]));
   let translatedCount = 0;
   await translateCues({
@@ -70,6 +78,7 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisData> {
       target.translation = item.translation;
       target.grammarNote = item.grammarNote;
       translatedCount += 1;
+      if (translatedCount === 1) log('first translation received');
       onProgress?.({
         phase: 'translating',
         translated: translatedCount,
@@ -78,6 +87,7 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisData> {
       });
     },
   });
+  log(`translation complete (${translatedCount}/${cues.length} cues)`);
 
   if (translatedCount === 0) {
     throw new Error('LLM returned no translations.');
