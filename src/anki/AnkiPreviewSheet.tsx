@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import type { AnkiSettings, Cue, DictName, LibraryEntry } from '@/types';
 import type { DictEntry } from '@/analysis/dict';
-import { AnkiConnectError } from './client';
+import { AnkiClient } from './client';
 import { buildCardAssets, cleanupCardAssets, type CardAssets } from './buildCard';
 import { sendCardToAnki } from './send';
 
@@ -80,17 +80,25 @@ export function AnkiPreviewSheet(props: AnkiPreviewSheetProps) {
     const { assets, fields } = phase;
     setPhase({ kind: 'sending', assets, fields });
     try {
+      // Bridge needs AnkiDroid + permission. If the user skipped the settings
+      // "Connect" step, surface the prompt here as a fallback so we're not stuck.
+      if (!AnkiClient.isAvailable()) {
+        throw new Error('AnkiDroid is not installed.');
+      }
+      let granted = await AnkiClient.hasPermission();
+      if (!granted) {
+        granted = await AnkiClient.requestPermission();
+      }
+      if (!granted) {
+        throw new Error('AnkiDroid permission denied. Open Settings → Anki → Connect AnkiDroid.');
+      }
+
       await sendCardToAnki(assets, fields, settings);
       cleanupCardAssets(assets);
       onSent?.();
       onClose();
     } catch (e) {
-      const err = e as Error;
-      const detail =
-        e instanceof AnkiConnectError && e.kind === 'unreachable'
-          ? 'Could not reach AnkiConnect. Is the AnkiconnectAndroid service running?'
-          : err.message;
-      setPhase({ kind: 'error', message: detail });
+      setPhase({ kind: 'error', message: (e as Error).message });
     }
   };
 
