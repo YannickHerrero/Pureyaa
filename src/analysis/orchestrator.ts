@@ -72,6 +72,7 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisData> {
     model,
     cues: cues.map((c) => ({ index: c.index, text: c.text })),
     signal,
+    onLog: log,
     onItem: (item) => {
       const target = byIndex.get(item.index);
       if (!target) return;
@@ -88,10 +89,6 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisData> {
     },
   });
   log(`translation complete (${translatedCount}/${cues.length} cues)`);
-
-  if (translatedCount === 0) {
-    throw new Error('LLM returned no translations.');
-  }
 
   return { cues };
 }
