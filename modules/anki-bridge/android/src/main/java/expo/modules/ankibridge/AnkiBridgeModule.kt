@@ -7,8 +7,10 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.ichi2.anki.api.AddContentApi
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.permissions.Permissions
 import java.io.File
 import java.util.UUID
 
@@ -77,13 +79,10 @@ class AnkiBridgeModule : Module() {
       ContextCompat.checkSelfPermission(context, PERMISSION) == PackageManager.PERMISSION_GRANTED
     }
 
-    AsyncFunction("requestPermission") { promise: expo.modules.kotlin.Promise ->
-      val perms = appContext.permissions
-        ?: throw IllegalStateException("Permissions manager not available")
-      perms.askForPermissions(
-        { result ->
-          promise.resolve(result)
-        },
+    AsyncFunction("requestPermission") { promise: Promise ->
+      Permissions.askForPermissionsWithPermissionsManager(
+        appContext.permissions,
+        promise,
         PERMISSION,
       )
     }
@@ -159,11 +158,7 @@ class AnkiBridgeModule : Module() {
       }
     }
 
-    AsyncFunction("addNote") {
-      deckName: String,
-      modelName: String,
-      fields: List<String>,
-      tags: List<String> ->
+    AsyncFunction("addNote") { deckName: String, modelName: String, fields: List<String>, tags: List<String> ->
       val api = openApi()
       val deckId = api.deckList?.entries?.find { it.value == deckName }?.key
         ?: error("Deck '$deckName' not found in AnkiDroid.")
