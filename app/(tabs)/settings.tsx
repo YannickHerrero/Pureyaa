@@ -25,7 +25,7 @@ import {
 } from '@/storage/settings';
 import { getAnkiSettings, saveAnkiSettings } from '@/storage/ankiSettings';
 import { testApiKey } from '@/analysis/claude';
-import { makeAnkiClient, AnkiConnectError } from '@/anki/client';
+import { AnkiClient } from '@/anki/client';
 import { synthesizeJapanese, testGoogleTts } from '@/anki/tts';
 
 const VOICE_PREVIEW_TEXT = '今日はいい天気ですね。';
@@ -154,25 +154,37 @@ export default function SettingsScreen() {
 
   const [ankiTesting, setAnkiTesting] = useState(false);
   const [ankiResult, setAnkiResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const onTestAnki = async () => {
+  const onConnectAnki = async () => {
     setAnkiTesting(true);
     setAnkiResult(null);
     try {
-      const client = makeAnkiClient(anki.ankiConnectUrl.trim());
-      const v = await client.version();
-      const decks = await client.deckNames();
-      const hasDeck = decks.includes(anki.defaultDeckName.trim());
-      const deckMsg = hasDeck
-        ? `; deck "${anki.defaultDeckName}" found.`
-        : `; deck "${anki.defaultDeckName}" is missing — create it in AnkiDroid.`;
-      setAnkiResult({ ok: hasDeck, message: `Connected (AnkiConnect v${v})${deckMsg}` });
+      if (!AnkiClient.isAvailable()) {
+        setAnkiResult({
+          ok: false,
+          message: 'AnkiDroid is not installed. Install it from the Play Store first.',
+        });
+        return;
+      }
+      let granted = await AnkiClient.hasPermission();
+      if (!granted) {
+        granted = await AnkiClient.requestPermission();
+      }
+      if (!granted) {
+        setAnkiResult({
+          ok: false,
+          message: 'Permission denied. Tap Connect again and accept the prompt.',
+        });
+        return;
+      }
+      // Install the custom note type and ensure the deck (idempotent).
+      await AnkiClient.ensurePureyaaModel();
+      await AnkiClient.ensureDeck(anki.defaultDeckName);
+      setAnkiResult({
+        ok: true,
+        message: `Connected. Deck "${anki.defaultDeckName}" + Pureyaa Sentence model ready.`,
+      });
     } catch (e) {
-      const err = e as Error;
-      const detail =
-        e instanceof AnkiConnectError && e.kind === 'unreachable'
-          ? 'Make sure AnkiconnectAndroid is installed and the service is running.'
-          : err.message;
-      setAnkiResult({ ok: false, message: detail });
+      setAnkiResult({ ok: false, message: (e as Error).message });
     } finally {
       setAnkiTesting(false);
     }
@@ -355,17 +367,6 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        <Label>AnkiConnect URL</Label>
-        <TextInput
-          value={anki.ankiConnectUrl}
-          onChangeText={(t) => updateAnki({ ankiConnectUrl: t })}
-          style={styles.input}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="http://127.0.0.1:8765"
-          placeholderTextColor="#666"
-        />
-
         <Label>Default deck</Label>
         <TextInput
           value={anki.defaultDeckName}
@@ -395,9 +396,11 @@ export default function SettingsScreen() {
           <Pressable
             style={[styles.button, ankiTesting && styles.buttonDisabled]}
             disabled={ankiTesting}
-            onPress={onTestAnki}
+            onPress={onConnectAnki}
           >
-            <Text style={styles.buttonText}>{ankiTesting ? 'Testing…' : 'Test connection'}</Text>
+            <Text style={styles.buttonText}>
+              {ankiTesting ? 'Connecting…' : 'Connect AnkiDroid'}
+            </Text>
           </Pressable>
         </View>
         {ankiResult && (

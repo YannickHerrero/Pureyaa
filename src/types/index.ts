@@ -99,7 +99,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export type AudioMode = 'original' | 'tts' | 'none';
 
 export interface AnkiSettings {
-  ankiConnectUrl: string;
   defaultDeckName: string;
   audioPaddingBeforeMs: number;
   audioPaddingAfterMs: number;
@@ -108,10 +107,9 @@ export interface AnkiSettings {
 }
 
 export const DEFAULT_ANKI_SETTINGS: AnkiSettings = {
-  ankiConnectUrl: 'http://127.0.0.1:8765',
-  // "Default" always exists in AnkiDroid; AnkiconnectAndroid does not support
-  // createDeck, so the configured deck must exist there ahead of time.
-  defaultDeckName: 'Default',
+  // The native bridge auto-creates the deck on first send, so any name
+  // works — Pureyaa is the obvious default for this app.
+  defaultDeckName: 'Pureyaa',
   audioPaddingBeforeMs: 500,
   audioPaddingAfterMs: 500,
   audioMode: 'original',
