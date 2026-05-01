@@ -20,6 +20,8 @@ import {
 } from '@/storage/settings';
 import { getAnkiSettings, saveAnkiSettings } from '@/storage/ankiSettings';
 import { testApiKey } from '@/analysis/claude';
+import { makeAnkiClient, AnkiConnectError } from '@/anki/client';
+import { ensurePureyaaModel } from '@/anki/model';
 
 const MODELS: ModelId[] = ['haiku', 'sonnet', 'opus'];
 const SUB_MODES: SubtitleMode[] = ['jp', 'jp+en', 'en'];
@@ -53,6 +55,28 @@ export default function SettingsScreen() {
     const next = { ...anki, ...patch };
     setAnki(next);
     await saveAnkiSettings(next);
+  };
+
+  const [ankiTesting, setAnkiTesting] = useState(false);
+  const [ankiResult, setAnkiResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const onTestAnki = async () => {
+    setAnkiTesting(true);
+    setAnkiResult(null);
+    try {
+      const client = makeAnkiClient(anki.ankiConnectUrl.trim());
+      const v = await client.version();
+      await ensurePureyaaModel(client);
+      setAnkiResult({ ok: true, message: `Connected (AnkiConnect v${v}); model ready.` });
+    } catch (e) {
+      const err = e as Error;
+      const detail =
+        e instanceof AnkiConnectError && e.kind === 'unreachable'
+          ? 'Make sure AnkiconnectAndroid is installed and the service is running.'
+          : err.message;
+      setAnkiResult({ ok: false, message: detail });
+    } finally {
+      setAnkiTesting(false);
+    }
   };
 
   const update = async (patch: Partial<AppSettings>) => {
@@ -187,6 +211,22 @@ export default function SettingsScreen() {
           style={styles.input}
           keyboardType="number-pad"
         />
+
+        <View style={styles.row}>
+          <Pressable
+            style={[styles.button, ankiTesting && styles.buttonDisabled]}
+            disabled={ankiTesting}
+            onPress={onTestAnki}
+          >
+            <Text style={styles.buttonText}>{ankiTesting ? 'Testing…' : 'Test connection'}</Text>
+          </Pressable>
+        </View>
+        {ankiResult && (
+          <Text style={[styles.testResult, ankiResult.ok ? styles.ok : styles.bad]}>
+            {ankiResult.ok ? '✓ ' : '✗ '}
+            {ankiResult.message}
+          </Text>
+        )}
       </Section>
 
       <Section title="Playback">
