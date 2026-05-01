@@ -21,10 +21,6 @@ interface RpcEnvelope<T> {
   error: string | null;
 }
 
-// Use XMLHttpRequest instead of fetch: AnkiconnectAndroid uses NanoHTTPD as
-// its HTTP server, which mishandles bodies sent with chunked transfer
-// encoding (which RN's fetch sometimes uses). XHR sends with explicit
-// Content-Length, which NanoHTTPD reads correctly.
 function invoke<T>(url: string, action: string, params?: unknown): Promise<T> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
@@ -33,27 +29,48 @@ function invoke<T>(url: string, action: string, params?: unknown): Promise<T> {
       params: params ?? {},
     });
 
+    console.log(
+      `[anki] POST ${url}\n  body (${body.length} chars): ${body}`,
+    );
+
     const xhr = new XMLHttpRequest();
     xhr.open('POST', url);
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.responseType = 'text';
-    xhr.onerror = () =>
+    xhr.onerror = () => {
+      console.error(`[anki] network error: status=${xhr.status} statusText="${xhr.statusText}"`);
       reject(
         new AnkiConnectError(
           'unreachable',
           `Could not reach AnkiConnect at ${url}. Is the AnkiconnectAndroid service running?`,
         ),
       );
+    };
     xhr.onload = () => {
+      console.log(
+        `[anki] response status=${xhr.status} ` +
+          `body (${xhr.responseText.length} chars): ${xhr.responseText.slice(0, 1000)}`,
+      );
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new AnkiConnectError('http', `AnkiConnect HTTP ${xhr.status}`));
+        reject(
+          new AnkiConnectError(
+            'http',
+            `AnkiConnect HTTP ${xhr.status}: ${xhr.responseText.slice(0, 300)}`,
+          ),
+        );
         return;
       }
       let envelope: RpcEnvelope<T>;
       try {
         envelope = JSON.parse(xhr.responseText) as RpcEnvelope<T>;
-      } catch {
-        reject(new AnkiConnectError('protocol', 'AnkiConnect returned non-JSON'));
+      } catch (e) {
+        console.error(`[anki] failed to parse response JSON: ${(e as Error).message}`);
+        reject(
+          new AnkiConnectError(
+            'protocol',
+            `AnkiConnect returned non-JSON: ${xhr.responseText.slice(0, 300)}`,
+          ),
+        );
         return;
       }
       if (envelope.error) {
