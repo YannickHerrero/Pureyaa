@@ -8,6 +8,7 @@ import {
   type SyncPoint,
 } from '@/utils/retimer';
 import { formatHMS } from '@/utils/time';
+import { addRecentRetimer } from '@/storage/recentRetimers';
 
 export interface RetimerModalProps {
   visible: boolean;
@@ -48,15 +49,20 @@ export function RetimerModal(props: RetimerModalProps) {
     });
   };
 
+  const applyAndRemember = (next: RetimerState) => {
+    onApply(next);
+    addRecentRetimer(next.offsetMs, next.scaleFactor).catch(() => {});
+    reset();
+    onClose();
+  };
+
   const applyOnePoint = () => {
     if (p1.textTimeMs == null || p1.audioTimeMs == null) {
       setError('Capture both Text and Audio for sync point 1.');
       return;
     }
     const next = computeFromOnePoint({ textTimeMs: p1.textTimeMs, audioTimeMs: p1.audioTimeMs });
-    onApply(next);
-    reset();
-    onClose();
+    applyAndRemember(next);
   };
 
   const applyTwoPoints = () => {
@@ -76,9 +82,7 @@ export function RetimerModal(props: RetimerModalProps) {
       setError('Sync point 2 must be meaningfully later than point 1.');
       return;
     }
-    onApply(next);
-    reset();
-    onClose();
+    applyAndRemember(next);
   };
 
   const onResetSync = () => {
