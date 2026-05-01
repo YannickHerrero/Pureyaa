@@ -101,6 +101,7 @@ export interface AnkiSettings {
   defaultDeckName: string;
   audioPaddingBeforeMs: number;
   audioPaddingAfterMs: number;
+  includeAudio: boolean;
 }
 
 export const DEFAULT_ANKI_SETTINGS: AnkiSettings = {
@@ -110,4 +111,5 @@ export const DEFAULT_ANKI_SETTINGS: AnkiSettings = {
   defaultDeckName: 'Default',
   audioPaddingBeforeMs: 500,
   audioPaddingAfterMs: 500,
+  includeAudio: true,
 };
