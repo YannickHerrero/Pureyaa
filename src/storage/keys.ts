@@ -3,6 +3,7 @@ export const STORAGE_KEYS = {
   savedWords: 'pureyaa.savedWords.v1',
   settings: 'pureyaa.settings.v1',
   onboarded: 'pureyaa.onboarded.v1',
+  recentRetimers: 'pureyaa.recentRetimers.v1',
 } as const;
 
 export const SECURE_KEYS = {
