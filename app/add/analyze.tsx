@@ -8,7 +8,11 @@ import {
   ScrollView,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { runAnalysis, type ProgressEvent } from '@/analysis/orchestrator';
+import {
+  addTranslations,
+  tokenizeSubtitles,
+  type ProgressEvent,
+} from '@/analysis/orchestrator';
 import { getApiKey, getSettings } from '@/storage/settings';
 import {
   analysisPathFor,
@@ -74,34 +78,42 @@ export default function AnalyzeScreen() {
       if (!apiKey) throw new Error('Missing API key. Set it in Settings.');
       const settings = await getSettings();
 
-      const data = await runAnalysis({
+      const onLog = (text: string) => {
+        const ts = (Date.now() - startTs) / 1000;
+        setState((s) => ({ ...s, logs: [...s.logs, { ts, text }] }));
+      };
+      const onProgress = (e: ProgressEvent) => {
+        setState((s) => {
+          if (e.phase === 'tokenizing') {
+            return {
+              ...s,
+              phase: 'tokenizing',
+              tokenized: e.processed,
+              tokenizedTotal: e.total,
+            };
+          }
+          return {
+            ...s,
+            phase: 'translating',
+            translated: e.translated,
+            translatedTotal: e.total,
+            latestText: e.latestText,
+          };
+        });
+      };
+
+      const data = await tokenizeSubtitles({
         subtitleUri: params.subtitleUri,
+        signal: ctl.signal,
+        onLog,
+        onProgress,
+      });
+      await addTranslations(data, {
         apiKey,
         model: settings.modelId,
         signal: ctl.signal,
-        onLog: (text: string) => {
-          const ts = (Date.now() - startTs) / 1000;
-          setState((s) => ({ ...s, logs: [...s.logs, { ts, text }] }));
-        },
-        onProgress: (e: ProgressEvent) => {
-          setState((s) => {
-            if (e.phase === 'tokenizing') {
-              return {
-                ...s,
-                phase: 'tokenizing',
-                tokenized: e.processed,
-                tokenizedTotal: e.total,
-              };
-            }
-            return {
-              ...s,
-              phase: 'translating',
-              translated: e.translated,
-              translatedTotal: e.total,
-              latestText: e.latestText,
-            };
-          });
-        },
+        onLog,
+        onProgress,
       });
 
       setState((s) => ({ ...s, phase: 'finalizing' }));

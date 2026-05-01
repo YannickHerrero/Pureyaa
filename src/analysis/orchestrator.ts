@@ -15,8 +15,14 @@ export type ProgressEvent =
       latestText: string;
     };
 
-export interface AnalyzeOptions {
+export interface TokenizeOptions {
   subtitleUri: string;
+  onProgress?: (e: ProgressEvent) => void;
+  onLog?: (text: string) => void;
+  signal?: AbortSignal;
+}
+
+export interface TranslateAnalysisOptions {
   apiKey: string;
   model: ModelId;
   onProgress?: (e: ProgressEvent) => void;
@@ -24,8 +30,8 @@ export interface AnalyzeOptions {
   signal?: AbortSignal;
 }
 
-export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisData> {
-  const { subtitleUri, apiKey, model, onProgress, onLog, signal } = opts;
+export async function tokenizeSubtitles(opts: TokenizeOptions): Promise<AnalysisData> {
+  const { subtitleUri, onProgress, onLog, signal } = opts;
   const log = (s: string) => onLog?.(s);
 
   log('reading + parsing SRT');
@@ -63,14 +69,23 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisData> {
     onProgress?.({ phase: 'tokenizing', processed: i + 1, total: rawCues.length });
   }
   log('tokenization complete');
+  return { cues };
+}
 
-  log(`requesting translation from Claude (${cues.length} lines)`);
-  const byIndex = new Map<number, Cue>(cues.map((c) => [c.index, c]));
+export async function addTranslations(
+  data: AnalysisData,
+  opts: TranslateAnalysisOptions,
+): Promise<void> {
+  const { apiKey, model, onProgress, onLog, signal } = opts;
+  const log = (s: string) => onLog?.(s);
+
+  log(`requesting translation from Claude (${data.cues.length} lines)`);
+  const byIndex = new Map<number, Cue>(data.cues.map((c) => [c.index, c]));
   let translatedCount = 0;
   await translateCues({
     apiKey,
     model,
-    cues: cues.map((c) => ({ index: c.index, text: c.text })),
+    cues: data.cues.map((c) => ({ index: c.index, text: c.text })),
     signal,
     onLog: log,
     onItem: (item) => {
@@ -83,12 +98,10 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisData> {
       onProgress?.({
         phase: 'translating',
         translated: translatedCount,
-        total: cues.length,
+        total: data.cues.length,
         latestText: item.translation,
       });
     },
   });
-  log(`translation complete (${translatedCount}/${cues.length} cues)`);
-
-  return { cues };
+  log(`translation complete (${translatedCount}/${data.cues.length} cues)`);
 }
