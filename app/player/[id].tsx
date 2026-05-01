@@ -276,6 +276,29 @@ function Player({
   const aspect = entry.videoAspectRatio > 0 ? entry.videoAspectRatio : 16 / 9;
   const videoHeight = screenWidth / aspect;
 
+  const seekToAdjacentCue = (direction: -1 | 1) => {
+    if (cues.length === 0) return;
+    let targetIdx: number;
+    if (currentCueIndex >= 0) {
+      targetIdx = currentCueIndex + direction;
+    } else if (direction > 0) {
+      targetIdx = cues.findIndex(
+        (c) => c.startMs * retimer.scaleFactor + retimer.offsetMs > currentMs,
+      );
+    } else {
+      targetIdx = -1;
+      for (let i = 0; i < cues.length; i++) {
+        const startMs = cues[i].startMs * retimer.scaleFactor + retimer.offsetMs;
+        if (startMs < currentMs) targetIdx = i;
+        else break;
+      }
+    }
+    if (targetIdx < 0 || targetIdx >= cues.length) return;
+    const target = cues[targetIdx];
+    const startSec = (target.startMs * retimer.scaleFactor + retimer.offsetMs) / 1000;
+    player.currentTime = Math.max(0, startSec);
+  };
+
   const currentCueIndex = useMemo(
     () => findCueIndexAt(cues, currentMs, retimer),
     [cues, currentMs, retimer],
