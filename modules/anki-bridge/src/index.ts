@@ -21,6 +21,12 @@ interface AnkiBridgeNativeModule {
     tags: string[],
   ): Promise<number>;
   storeMedia(base64: string, filename: string, mimeType: string): Promise<string>;
+  /**
+   * Tell Android we want to keep reading this content:// URI across app
+   * restarts. Call once, right after a DocumentPicker returns a URI you
+   * plan to persist into storage. Silently no-ops on non-persistable URIs.
+   */
+  persistUriPermission(uri: string): Promise<void>;
 }
 
 const native = requireNativeModule<AnkiBridgeNativeModule>('AnkiBridge');
