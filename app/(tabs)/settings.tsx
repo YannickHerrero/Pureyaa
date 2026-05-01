@@ -21,7 +21,6 @@ import {
 import { getAnkiSettings, saveAnkiSettings } from '@/storage/ankiSettings';
 import { testApiKey } from '@/analysis/claude';
 import { makeAnkiClient, AnkiConnectError } from '@/anki/client';
-import { ensurePureyaaModel } from '@/anki/model';
 
 const MODELS: ModelId[] = ['haiku', 'sonnet', 'opus'];
 const SUB_MODES: SubtitleMode[] = ['jp', 'jp+en', 'en'];
@@ -65,8 +64,12 @@ export default function SettingsScreen() {
     try {
       const client = makeAnkiClient(anki.ankiConnectUrl.trim());
       const v = await client.version();
-      await ensurePureyaaModel(client);
-      setAnkiResult({ ok: true, message: `Connected (AnkiConnect v${v}); model ready.` });
+      const decks = await client.deckNames();
+      const hasDeck = decks.includes(anki.defaultDeckName.trim());
+      const deckMsg = hasDeck
+        ? `; deck "${anki.defaultDeckName}" found.`
+        : `; deck "${anki.defaultDeckName}" is missing — create it in AnkiDroid.`;
+      setAnkiResult({ ok: hasDeck, message: `Connected (AnkiConnect v${v})${deckMsg}` });
     } catch (e) {
       const err = e as Error;
       const detail =
