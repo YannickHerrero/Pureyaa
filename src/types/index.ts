@@ -105,7 +105,9 @@ export interface AnkiSettings {
 
 export const DEFAULT_ANKI_SETTINGS: AnkiSettings = {
   ankiConnectUrl: 'http://127.0.0.1:8765',
-  defaultDeckName: 'Pureyaa',
+  // "Default" always exists in AnkiDroid; AnkiconnectAndroid does not support
+  // createDeck, so the configured deck must exist there ahead of time.
+  defaultDeckName: 'Default',
   audioPaddingBeforeMs: 500,
   audioPaddingAfterMs: 500,
 };

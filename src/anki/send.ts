@@ -1,16 +1,17 @@
 import type { AnkiSettings } from '@/types';
 import { makeAnkiClient } from './client';
-import { ensurePureyaaModel, PUREYAA_MODEL_NAME } from './model';
+import { packIntoBasicFields } from './pack';
 import type { CardAssets } from './buildCard';
+
+const BASIC_MODEL = 'Basic';
 
 /**
  * Send a fully-built card to AnkiDroid via AnkiConnect.
- * - ensures the Pureyaa Sentence model exists
- * - creates the deck (no-op if it already exists)
- * - uploads each media file
- * - adds the note
  *
- * Returns the new Anki note id.
+ * AnkiconnectAndroid doesn't implement createModel or createDeck, so we use
+ * AnkiDroid's built-in "Basic" note type and assume the configured deck
+ * already exists ("Default" always does — the user can create others in
+ * AnkiDroid manually if they want).
  */
 export async function sendCardToAnki(
   assets: CardAssets,
@@ -19,19 +20,14 @@ export async function sendCardToAnki(
 ): Promise<number> {
   const client = makeAnkiClient(settings.ankiConnectUrl.trim());
 
-  await ensurePureyaaModel(client);
-  // createDeck is idempotent on AnkiConnect — it returns the existing id if
-  // the deck already exists.
-  await client.createDeck(settings.defaultDeckName);
-
   for (const m of assets.media) {
     await client.storeMediaFile(m.filename, m.base64);
   }
 
   return client.addNote({
     deckName: settings.defaultDeckName,
-    modelName: PUREYAA_MODEL_NAME,
-    fields,
+    modelName: BASIC_MODEL,
+    fields: packIntoBasicFields(fields),
     tags: ['pureyaa'],
   });
 }
