@@ -21,11 +21,18 @@ import {
   writeAnalysisData,
 } from '@/storage/entries';
 import { extractThumbnail } from '@/utils/thumbnail';
-import type { LibraryEntry } from '@/types';
+import type { AnalysisData, AppSettings, LibraryEntry } from '@/types';
 import { DEFAULT_RETIMER } from '@/types';
 import { uuid } from '@/utils/uuid';
 
-type Phase = 'idle' | 'tokenizing' | 'translating' | 'finalizing' | 'done' | 'failed';
+type Phase =
+  | 'idle'
+  | 'tokenizing'
+  | 'translating'
+  | 'translation-failed'
+  | 'finalizing'
+  | 'done'
+  | 'failed';
 
 interface LogEntry {
   ts: number;
@@ -67,16 +74,68 @@ export default function AnalyzeScreen() {
   }>();
   const [state, setState] = useState<ProgressState>(INITIAL);
   const abortRef = useRef<AbortController | null>(null);
+  const partialDataRef = useRef<AnalysisData | null>(null);
+  const settingsRef = useRef<AppSettings | null>(null);
+
+  const finalize = async (data: AnalysisData, settings: AppSettings) => {
+    setState((s) => ({ ...s, phase: 'finalizing' }));
+
+    const id = uuid();
+    const analysisDataPath = await analysisPathFor(id);
+    await writeAnalysisData(analysisDataPath, data);
+
+    const thumbPath = await thumbnailPathFor(id);
+    let thumbnailPath = thumbPath;
+    let aspectRatio = 16 / 9;
+    let durationSeconds = 0;
+    try {
+      const lastCueEndMs = data.cues[data.cues.length - 1]?.endMs ?? 0;
+      const positionMs = Math.max(0, Math.floor(lastCueEndMs * 0.1));
+      const t = await extractThumbnail(params.videoUri, thumbPath, positionMs);
+      thumbnailPath = t.uri;
+      aspectRatio = t.width > 0 && t.height > 0 ? t.width / t.height : aspectRatio;
+      durationSeconds = Math.ceil(lastCueEndMs / 1000);
+    } catch {
+      // proceed with defaults
+    }
+
+    const ep = parseInt(params.episodeNumber ?? '', 10);
+    const entry: LibraryEntry = {
+      id,
+      title: params.title,
+      seriesName: (params.seriesName ?? '').length > 0 ? params.seriesName : null,
+      episodeNumber: Number.isFinite(ep) ? ep : null,
+      thumbnailPath,
+      durationSeconds,
+      videoAspectRatio: aspectRatio,
+      dateAddedISO: new Date().toISOString(),
+      lastWatchedISO: null,
+      watchProgressPercent: 0,
+      retimerState: { ...DEFAULT_RETIMER },
+      analysisState: 'completed',
+      analysisError: null,
+      modelUsed: settings.modelId,
+      videoUri: params.videoUri,
+      subtitleUri: params.subtitleUri,
+      analysisDataPath,
+    };
+    await upsertEntry(entry);
+
+    setState((s) => ({ ...s, phase: 'done' }));
+    setTimeout(() => router.replace('/library'), 600);
+  };
 
   const start = async () => {
     const startTs = Date.now();
     setState({ ...INITIAL, phase: 'tokenizing' });
     const ctl = new AbortController();
     abortRef.current = ctl;
+    partialDataRef.current = null;
     try {
       const apiKey = await getApiKey();
       if (!apiKey) throw new Error('Missing API key. Set it in Settings.');
       const settings = await getSettings();
+      settingsRef.current = settings;
 
       const onLog = (text: string) => {
         const ts = (Date.now() - startTs) / 1000;
@@ -108,60 +167,37 @@ export default function AnalyzeScreen() {
         onLog,
         onProgress,
       });
-      await addTranslations(data, {
-        apiKey,
-        model: settings.modelId,
-        signal: ctl.signal,
-        onLog,
-        onProgress,
-      });
+      partialDataRef.current = data;
 
-      setState((s) => ({ ...s, phase: 'finalizing' }));
-
-      const id = uuid();
-      const analysisDataPath = await analysisPathFor(id);
-      await writeAnalysisData(analysisDataPath, data);
-
-      const thumbPath = await thumbnailPathFor(id);
-      let thumbnailPath = thumbPath;
-      let aspectRatio = 16 / 9;
-      let durationSeconds = 0;
       try {
-        const lastCueEndMs = data.cues[data.cues.length - 1]?.endMs ?? 0;
-        const positionMs = Math.max(0, Math.floor(lastCueEndMs * 0.1));
-        const t = await extractThumbnail(params.videoUri, thumbPath, positionMs);
-        thumbnailPath = t.uri;
-        aspectRatio = t.width > 0 && t.height > 0 ? t.width / t.height : aspectRatio;
-        durationSeconds = Math.ceil(lastCueEndMs / 1000);
-      } catch {
-        // proceed with defaults
+        await addTranslations(data, {
+          apiKey,
+          model: settings.modelId,
+          signal: ctl.signal,
+          onLog,
+          onProgress,
+        });
+      } catch (e) {
+        setState((s) => ({
+          ...s,
+          phase: 'translation-failed',
+          error: (e as Error).message,
+        }));
+        return;
       }
 
-      const ep = parseInt(params.episodeNumber ?? '', 10);
-      const entry: LibraryEntry = {
-        id,
-        title: params.title,
-        seriesName: (params.seriesName ?? '').length > 0 ? params.seriesName : null,
-        episodeNumber: Number.isFinite(ep) ? ep : null,
-        thumbnailPath,
-        durationSeconds,
-        videoAspectRatio: aspectRatio,
-        dateAddedISO: new Date().toISOString(),
-        lastWatchedISO: null,
-        watchProgressPercent: 0,
-        retimerState: { ...DEFAULT_RETIMER },
-        analysisState: 'completed',
-        analysisError: null,
-        modelUsed: settings.modelId,
-        videoUri: params.videoUri,
-        subtitleUri: params.subtitleUri,
-        analysisDataPath,
-      };
-      await upsertEntry(entry);
+      await finalize(data, settings);
+    } catch (e) {
+      setState((s) => ({ ...s, phase: 'failed', error: (e as Error).message }));
+    }
+  };
 
-      setState((s) => ({ ...s, phase: 'done' }));
-      // small delay so the user sees "done"
-      setTimeout(() => router.replace('/library'), 600);
+  const onSkipTranslation = async () => {
+    const data = partialDataRef.current;
+    const settings = settingsRef.current;
+    if (!data || !settings) return;
+    try {
+      await finalize(data, settings);
     } catch (e) {
       setState((s) => ({ ...s, phase: 'failed', error: (e as Error).message }));
     }
@@ -219,6 +255,23 @@ export default function AnalyzeScreen() {
             <Pressable style={styles.retry} onPress={start}>
               <Text style={styles.retryText}>Retry</Text>
             </Pressable>
+          </View>
+        )}
+        {state.phase === 'translation-failed' && state.error && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Translation failed</Text>
+            <Text style={styles.errorBody}>{state.error}</Text>
+            <Text style={styles.errorHint}>
+              You can save the entry with tokenization only — translations will be empty.
+            </Text>
+            <View style={styles.buttonRow}>
+              <Pressable style={styles.retry} onPress={start}>
+                <Text style={styles.retryText}>Retry</Text>
+              </Pressable>
+              <Pressable style={[styles.retry, styles.skip]} onPress={onSkipTranslation}>
+                <Text style={styles.retryText}>Save without translations</Text>
+              </Pressable>
+            </View>
           </View>
         )}
         <DebugLog logs={state.logs} />
@@ -325,6 +378,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   retryText: { color: '#fff', fontWeight: '600' },
+  errorHint: { color: '#aaa', fontSize: 13, lineHeight: 18 },
+  buttonRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  skip: { backgroundColor: '#374151' },
   debug: {
     marginTop: 16,
     backgroundColor: '#0a0a0a',
