@@ -105,11 +105,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   revealButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#1f2937',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
+    alignSelf: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  revealText: { color: '#9ca3af', fontSize: 12 },
+  revealText: {
+    color: '#4b5563',
+    fontSize: 11,
+    textDecorationLine: 'underline',
+  },
 });
