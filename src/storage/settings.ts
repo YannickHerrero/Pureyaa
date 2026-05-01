@@ -33,3 +33,19 @@ export async function setApiKey(key: string): Promise<void> {
 export async function clearApiKey(): Promise<void> {
   await SecureStore.deleteItemAsync(SECURE_KEYS.anthropicApiKey);
 }
+
+export async function getGoogleTtsApiKey(): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(SECURE_KEYS.googleTtsApiKey);
+  } catch {
+    return null;
+  }
+}
+
+export async function setGoogleTtsApiKey(key: string): Promise<void> {
+  await SecureStore.setItemAsync(SECURE_KEYS.googleTtsApiKey, key);
+}
+
+export async function clearGoogleTtsApiKey(): Promise<void> {
+  await SecureStore.deleteItemAsync(SECURE_KEYS.googleTtsApiKey);
+}

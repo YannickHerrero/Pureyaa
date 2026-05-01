@@ -9,4 +9,5 @@ export const STORAGE_KEYS = {
 
 export const SECURE_KEYS = {
   anthropicApiKey: 'pureyaa.anthropicApiKey',
+  googleTtsApiKey: 'pureyaa.googleTtsApiKey',
 } as const;
