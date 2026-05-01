@@ -89,13 +89,39 @@ export async function buildCardAssets(args: {
 
   // Image at cue midpoint
   const midMs = Math.max(0, Math.floor((cue.startMs + cue.endMs) / 2));
-  await extractThumbnail(videoUri, imagePath, midMs);
+  console.log(`[buildCard] image: midMs=${midMs} → ${imagePath}`);
+  try {
+    await extractThumbnail(videoUri, imagePath, midMs);
+    console.log(`[buildCard] image extracted ok`);
+  } catch (e) {
+    console.error(`[buildCard] image extraction failed: ${(e as Error).message}`);
+    throw new Error(`Image extraction failed: ${(e as Error).message}`);
+  }
 
   // Audio with padding, capped to keep the file sane
   const rawStart = Math.max(0, cue.startMs - settings.audioPaddingBeforeMs);
   const rawEnd = cue.endMs + settings.audioPaddingAfterMs;
   const cappedEnd = Math.min(rawEnd, rawStart + MAX_AUDIO_DURATION_MS);
-  await extractAudio(videoUri, { startMs: rawStart, endMs: cappedEnd, outPath: audioPath });
+  console.log(
+    `[buildCard] audio: startMs=${rawStart} endMs=${cappedEnd} ` +
+      `(cue ${cue.startMs}..${cue.endMs}, padding ${settings.audioPaddingBeforeMs}/${settings.audioPaddingAfterMs}) ` +
+      `\n  videoUri=${videoUri}\n  outPath=${audioPath}`,
+  );
+  try {
+    const result = await extractAudio(videoUri, {
+      startMs: rawStart,
+      endMs: cappedEnd,
+      outPath: audioPath,
+    });
+    console.log(`[buildCard] audio extracted ok → ${result}`);
+  } catch (e) {
+    const err = e as Error;
+    console.error(
+      `[buildCard] audio extraction failed: name=${err.name} message=${err.message}`,
+    );
+    if (err.stack) console.error(err.stack);
+    throw new Error(`Audio extraction failed: ${err.message}`);
+  }
 
   const imageBase64 = await new File(imagePath).base64();
   const audioBase64 = await new File(audioPath).base64();
