@@ -172,39 +172,47 @@ function normalize(raw: unknown): CueTranslation | null {
 /**
  * Incrementally extracts top-level objects from a streaming JSON array.
  * Handles partial chunks; emits each completed object via onItem.
- * Tolerant of leading/trailing whitespace and the wrapping `[` / `]`.
+ * Tolerant of leading/trailing whitespace, code-fence wrappers (```json),
+ * and the wrapping `[` / `]`.
  */
 export class IncrementalArrayParser {
   onItem: (obj: unknown) => void = () => {};
   private buffer = '';
+  private scanPos = 0; // resume position within buffer across push() calls
+  private inObject = false;
   private depth = 0;
   private inString = false;
   private escaped = false;
-  private objStart = -1;
-  private started = false;
 
   push(chunk: string): void {
     this.buffer += chunk;
-    while (this.objStart === -1 && this.buffer.length > 0) {
-      const c = this.buffer[0];
-      if (c === '[' || c === ' ' || c === '\n' || c === '\r' || c === '\t' || c === ',') {
-        if (c === '[') this.started = true;
-        this.buffer = this.buffer.slice(1);
-        continue;
-      }
-      if (c === '{') {
-        this.objStart = 0;
-        this.depth = 0;
-        this.inString = false;
-        this.escaped = false;
-        break;
-      }
-      // anything else (e.g. ']' end-of-array) — drop one char
-      this.buffer = this.buffer.slice(1);
-    }
-    if (this.objStart === -1) return;
 
-    for (let i = this.objStart; i < this.buffer.length; i++) {
+    if (!this.inObject) {
+      while (this.scanPos < this.buffer.length) {
+        const c = this.buffer[this.scanPos];
+        if (c === '{') {
+          // Drop everything before the object so objStart is at index 0.
+          this.buffer = this.buffer.slice(this.scanPos);
+          this.scanPos = 0;
+          this.inObject = true;
+          this.depth = 0;
+          this.inString = false;
+          this.escaped = false;
+          break;
+        }
+        // Anything else (whitespace, '[', ']', commas, code-fence chars,
+        // 'json' label, etc.) — skip past it.
+        this.scanPos++;
+      }
+      if (!this.inObject) {
+        // No '{' found; trim what we've already scanned to keep buffer small.
+        this.buffer = this.buffer.slice(this.scanPos);
+        this.scanPos = 0;
+        return;
+      }
+    }
+
+    for (let i = this.scanPos; i < this.buffer.length; i++) {
       const ch = this.buffer[i];
       if (this.inString) {
         if (this.escaped) {
@@ -226,18 +234,21 @@ export class IncrementalArrayParser {
         if (this.depth === 0) {
           const slice = this.buffer.slice(0, i + 1);
           this.buffer = this.buffer.slice(i + 1);
-          this.objStart = -1;
+          this.scanPos = 0;
+          this.inObject = false;
           try {
             this.onItem(JSON.parse(slice));
           } catch {
             // discard malformed object
           }
-          // continue scanning for next object
+          // Look for the next object in the remaining buffer.
           this.push('');
           return;
         }
       }
     }
+    // Reached end of buffer without closing — resume here on the next chunk.
+    this.scanPos = this.buffer.length;
   }
 }
 
