@@ -29,31 +29,53 @@ Rules:
 - Output a JSON array with one entry per cue: { "index": number, "translation": string, "grammarNote": string | null }.
 - Output ONLY the JSON array. No prose, no code fences, no commentary.`;
 
+// RN's fetch buffers response bodies — `res.body` is null even for streaming
+// SSE responses. XHR exposes `responseText` progressively as chunks arrive,
+// so we use that to parse Claude's stream incrementally.
+function streamingPost(
+  url: string,
+  body: string,
+  headers: Record<string, string>,
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+    let lastIndex = 0;
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState >= 3) {
+        const text = xhr.responseText;
+        if (text.length > lastIndex) {
+          onChunk(text.slice(lastIndex));
+          lastIndex = text.length;
+        }
+      }
+      if (xhr.readyState === 4) {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`Claude API error ${xhr.status}: ${xhr.responseText.slice(0, 500)}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Network error talking to Claude'));
+
+    if (signal) {
+      const onAbort = () => {
+        xhr.abort();
+        reject(new Error('Cancelled'));
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort);
+    }
+
+    xhr.send(body);
+  });
+}
+
 export async function translateCues(opts: TranslateOptions): Promise<CueTranslation[]> {
   const { apiKey, model, cues, signal, onItem } = opts;
   const userMessage = cues.map((c) => `[${c.index}] ${c.text}`).join('\n');
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    signal,
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: MODEL_IDS[model],
-      max_tokens: 16384,
-      stream: true,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  });
-
-  if (!res.ok || !res.body) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Claude API error ${res.status}: ${errText.slice(0, 500)}`);
-  }
 
   const parser = new IncrementalArrayParser();
   const items: CueTranslation[] = [];
@@ -64,30 +86,42 @@ export async function translateCues(opts: TranslateOptions): Promise<CueTranslat
     onItem?.(it);
   };
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder('utf-8');
   let buffer = '';
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 1);
-      if (!line.startsWith('data:')) continue;
-      const payload = line.slice(5).trim();
-      if (!payload || payload === '[DONE]') continue;
-      try {
-        const evt = JSON.parse(payload);
-        if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
-          parser.push(evt.delta.text ?? '');
+  await streamingPost(
+    'https://api.anthropic.com/v1/messages',
+    JSON.stringify({
+      model: MODEL_IDS[model],
+      max_tokens: 16384,
+      stream: true,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+    {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    (chunk) => {
+      buffer += chunk;
+      let idx;
+      while ((idx = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        try {
+          const evt = JSON.parse(payload);
+          if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
+            parser.push(evt.delta.text ?? '');
+          }
+        } catch {
+          // skip malformed line
         }
-      } catch {
-        // skip malformed line
       }
-    }
-  }
+    },
+    signal,
+  );
 
   return items;
 }
