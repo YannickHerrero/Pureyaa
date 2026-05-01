@@ -53,6 +53,15 @@ export function DictPopup({
             </Pressable>
           </View>
 
+          {cue ? (
+            <View style={styles.cueContext}>
+              <Text style={styles.cueJp}>{cue.text}</Text>
+              {cue.translation && cue.translation.trim().length > 0 ? (
+                <Text style={styles.cueEn}>{cue.translation}</Text>
+              ) : null}
+            </View>
+          ) : null}
+
           {matches.length === 0 ? (
             <Text style={styles.noMatch}>No dictionary match.</Text>
           ) : (
@@ -235,6 +244,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   bodyContent: { paddingBottom: 8 },
+  cueContext: {
+    backgroundColor: '#181818',
+    borderRadius: 8,
+    padding: 12,
+    gap: 4,
+  },
+  cueJp: { color: '#fff', fontSize: 14, lineHeight: 20 },
+  cueEn: { color: '#aaa', fontSize: 13, lineHeight: 18, fontStyle: 'italic' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
