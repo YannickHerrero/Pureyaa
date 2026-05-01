@@ -70,7 +70,10 @@ export async function sendCardToAnki(
   const fieldsWithMedia = { ...fields };
   for (const m of assets.media) {
     const mimeType = pickMimeType(m.filename);
-    const ref = await AnkiClient.storeMedia(m.base64, m.filename, mimeType);
+    // AnkiDroid docs: preferredName must NOT include a file extension —
+    // the provider derives the extension from the source URI's content type.
+    const preferredName = m.filename.replace(/\.[^/.]+$/, '');
+    const ref = await AnkiClient.storeMedia(m.base64, preferredName, mimeType);
     if (mimeType === 'image') {
       fieldsWithMedia.Image = ref;
     } else {
