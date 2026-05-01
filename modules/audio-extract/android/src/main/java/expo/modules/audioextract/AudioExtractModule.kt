@@ -5,6 +5,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
+import android.util.Log
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
@@ -22,25 +23,44 @@ import java.nio.ByteBuffer
  * the requested startMs. For sentence mining this is desirable lead-in.
  */
 class AudioExtractModule : Module() {
+  companion object {
+    private const val TAG = "AudioExtract"
+  }
+
   override fun definition() = ModuleDefinition {
     Name("AudioExtract")
 
     AsyncFunction("extractAudio") { srcUri: String, startMs: Int, endMs: Int, outPath: String ->
+      Log.d(TAG, "extractAudio start: srcUri=$srcUri startMs=$startMs endMs=$endMs outPath=$outPath")
       val context = appContext.reactContext ?: error("No Android context available")
 
       val extractor = MediaExtractor()
       val uri = Uri.parse(srcUri)
       try {
+        Log.d(TAG, "trying setDataSource(context, uri, null) for $uri")
         extractor.setDataSource(context, uri, null)
-      } catch (_: Exception) {
-        extractor.setDataSource(srcUri.removePrefix("file://"))
+        Log.d(TAG, "setDataSource via context OK")
+      } catch (e: Exception) {
+        Log.w(TAG, "setDataSource(context, uri) failed: ${e.javaClass.simpleName}: ${e.message}; trying file path")
+        try {
+          extractor.setDataSource(srcUri.removePrefix("file://"))
+          Log.d(TAG, "setDataSource via file path OK")
+        } catch (e2: Exception) {
+          Log.e(TAG, "setDataSource fallback also failed", e2)
+          extractor.release()
+          throw IllegalStateException(
+            "Could not open source ($srcUri): ${e2.javaClass.simpleName}: ${e2.message}",
+          )
+        }
       }
 
+      Log.d(TAG, "trackCount=${extractor.trackCount}")
       var trackIndex = -1
       var audioFormat: MediaFormat? = null
       for (i in 0 until extractor.trackCount) {
         val format = extractor.getTrackFormat(i)
         val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
+        Log.d(TAG, "  track $i mime=$mime")
         if (mime.startsWith("audio/")) {
           trackIndex = i
           audioFormat = format
@@ -49,13 +69,15 @@ class AudioExtractModule : Module() {
       }
       if (trackIndex < 0 || audioFormat == null) {
         extractor.release()
-        error("No audio track found in source")
+        throw IllegalStateException("No audio track found in source $srcUri")
       }
+      Log.d(TAG, "selected audio track $trackIndex (${audioFormat.getString(MediaFormat.KEY_MIME)})")
       extractor.selectTrack(trackIndex)
       extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
 
       val outFile = File(outPath.removePrefix("file://"))
       outFile.parentFile?.mkdirs()
+      Log.d(TAG, "writing to ${outFile.absolutePath}")
       val muxer = MediaMuxer(outFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
       val muxerTrack = muxer.addTrack(audioFormat)
       muxer.start()
@@ -63,6 +85,7 @@ class AudioExtractModule : Module() {
       val buffer = ByteBuffer.allocate(256 * 1024)
       val info = MediaCodec.BufferInfo()
       val endUs = endMs * 1000L
+      var sampleCount = 0
 
       try {
         while (true) {
@@ -76,16 +99,22 @@ class AudioExtractModule : Module() {
           info.flags = extractor.sampleFlags
           muxer.writeSampleData(muxerTrack, buffer, info)
           extractor.advance()
+          sampleCount++
         }
+      } catch (e: Exception) {
+        Log.e(TAG, "while writing samples", e)
+        throw e
       } finally {
         try {
           muxer.stop()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+          Log.w(TAG, "muxer.stop() threw: ${e.message}")
         }
         muxer.release()
         extractor.release()
       }
 
+      Log.d(TAG, "extractAudio done: $sampleCount samples written to ${outFile.absolutePath}")
       return@AsyncFunction outFile.absolutePath
     }
   }
