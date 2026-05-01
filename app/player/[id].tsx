@@ -10,6 +10,8 @@ import {
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as DocumentPicker from 'expo-document-picker';
+import * as NavigationBar from 'expo-navigation-bar';
+import { setStatusBarHidden } from 'expo-status-bar';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { usePlayerData } from '@/player/playerStore';
 import { SubtitlePane } from '@/player/SubtitlePane';
@@ -210,6 +212,19 @@ function Player({
       setAutoPause(s.autoPauseAtLineEnd);
       await loadDictionaries();
     })();
+  }, []);
+
+  useEffect(() => {
+    // Enter immersive mode while playing. Sticky-immersive on Android: a
+    // swipe from the edge briefly reveals the system nav without forcing
+    // a re-layout.
+    setStatusBarHidden(true, 'fade');
+    NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+    NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => {});
+    return () => {
+      setStatusBarHidden(false, 'fade');
+      NavigationBar.setVisibilityAsync('visible').catch(() => {});
+    };
   }, []);
 
   useEffect(() => {
