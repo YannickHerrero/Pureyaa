@@ -1,33 +1,72 @@
 import type { AnkiSettings } from '@/types';
-import { makeAnkiClient } from './client';
-import { packIntoBasicFields } from './pack';
+import { AnkiClient } from './client';
 import type { CardAssets } from './buildCard';
 
-const BASIC_MODEL = 'Basic';
+export const PUREYAA_MODEL_NAME = 'Pureyaa Sentence';
 
 /**
- * Send a fully-built card to AnkiDroid via AnkiConnect.
- *
- * AnkiconnectAndroid doesn't implement createModel or createDeck, so we use
- * AnkiDroid's built-in "Basic" note type and assume the configured deck
- * already exists ("Default" always does — the user can create others in
- * AnkiDroid manually if they want).
+ * The order MUST match `PUREYAA_FIELDS` in `AnkiBridgeModule.kt`. AnkiDroid
+ * expects fields as a positional array, not a name→value map.
+ */
+const FIELD_ORDER = [
+  'Image',
+  'Audio',
+  'JapaneseRuby',
+  'JapanesePlain',
+  'English',
+  'GrammarNote',
+  'FocusWord',
+  'FocusReading',
+  'FocusGlosses',
+  'Source',
+] as const;
+
+function pickMimeType(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'm4a':
+    case 'mp4':
+      return 'audio/mp4';
+    case 'ogg':
+    case 'opus':
+      return 'audio/ogg';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+/**
+ * Send a fully-built card to AnkiDroid via the native bridge.
+ * - ensures the Pureyaa Sentence model exists (installs on first send)
+ * - ensures the deck exists (creates on first send)
+ * - uploads each media file via FileProvider-shared URIs
+ * - adds the note with all 10 fields populated
  */
 export async function sendCardToAnki(
   assets: CardAssets,
   fields: Record<string, string>,
   settings: AnkiSettings,
 ): Promise<number> {
-  const client = makeAnkiClient(settings.ankiConnectUrl.trim());
+  await AnkiClient.ensurePureyaaModel();
+  await AnkiClient.ensureDeck(settings.defaultDeckName);
 
   for (const m of assets.media) {
-    await client.storeMediaFile(m.filename, m.base64);
+    await AnkiClient.storeMedia(m.base64, m.filename, pickMimeType(m.filename));
   }
 
-  return client.addNote({
-    deckName: settings.defaultDeckName,
-    modelName: BASIC_MODEL,
-    fields: packIntoBasicFields(fields),
-    tags: ['pureyaa'],
-  });
+  const orderedFields = FIELD_ORDER.map((k) => fields[k] ?? '');
+
+  return AnkiClient.addNote(
+    settings.defaultDeckName,
+    PUREYAA_MODEL_NAME,
+    orderedFields,
+    ['pureyaa'],
+  );
 }
