@@ -3,14 +3,16 @@
  *
  * OpenRouter's /audio/transcriptions endpoint diverges from OpenAI's
  * multipart contract — it expects a JSON body with the audio payload
- * inline as base64 under `input_audio: { data, format }`. We always ask
- * for SRT directly so the rest of the pipeline (parser → tokenizer →
- * analysis) treats the result identically to a user-provided subtitle file.
+ * inline as base64 under `input_audio: { data, format }`. We ask for
+ * `verbose_json` (segments with start/end seconds) and build the SRT
+ * ourselves, because OR was observed to silently strip timestamps when
+ * `response_format: "srt"` was requested — leaving the parser with a
+ * timestampless transcript and "no cues found".
  *
- * The model is whisper-large-v3-turbo: ~12% WER multilingual including
- * Japanese, ~216× real-time at most providers — a 24-minute episode
- * transcribes in single-digit seconds of compute. Network upload of the
- * base64'd audio dominates wall time (base64 inflates the payload by ~33%).
+ * Model: whisper-large-v3-turbo. ~12% WER multilingual including
+ * Japanese, ~216× real-time at most providers — a 24-min episode
+ * transcribes in single-digit seconds of compute. Network upload of
+ * the base64'd audio dominates wall time (~33% inflation from base64).
  */
 
 import { File } from 'expo-file-system';
@@ -31,17 +33,17 @@ export interface TranscribeOptions {
   language?: string;
 }
 
-interface TranscriptionResponse {
-  /** SRT/text/json content depending on response_format. With srt, this is the raw SRT. */
+interface VerboseJsonResponse {
   text?: string;
-  /** Some providers return the SRT under `srt`. */
-  srt?: string;
+  segments?: Array<{ start: number; end: number; text: string }>;
   error?: { message?: string };
 }
 
 /**
  * Read the audio, base64-encode it, POST to /audio/transcriptions, and
- * return the SRT text. Throws on network or non-2xx responses.
+ * return the SRT text we built from the response's segments. Throws on
+ * network errors, non-2xx responses, or a response with no timestamped
+ * segments.
  */
 export async function transcribeToSrt(opts: TranscribeOptions): Promise<string> {
   const { apiKey, audioUri, audioFormat, language = 'ja' } = opts;
@@ -58,12 +60,10 @@ export async function transcribeToSrt(opts: TranscribeOptions): Promise<string> 
       },
       body: JSON.stringify({
         model: WHISPER_MODEL,
-        input_audio: {
-          data: audioBase64,
-          format: audioFormat,
-        },
+        input_audio: { data: audioBase64, format: audioFormat },
         language,
-        response_format: 'srt',
+        response_format: 'verbose_json',
+        timestamp_granularities: ['segment'],
       }),
     });
   } catch (e) {
@@ -75,24 +75,61 @@ export async function transcribeToSrt(opts: TranscribeOptions): Promise<string> 
     throw new Error(`Whisper HTTP ${res.status}: ${errBody.slice(0, 300)}`);
   }
 
-  // Response can come back as either raw SRT text or as a JSON envelope
-  // containing the SRT under `text`/`srt`. Handle both shapes.
-  const contentType = res.headers.get('content-type') ?? '';
-  let srt: string;
-  if (contentType.includes('application/json')) {
-    const json = (await res.json()) as TranscriptionResponse;
-    srt = json.srt ?? json.text ?? '';
-    if (!srt && json.error?.message) {
-      throw new Error(`Whisper: ${json.error.message}`);
-    }
-  } else {
-    srt = await res.text();
+  let json: VerboseJsonResponse;
+  try {
+    json = (await res.json()) as VerboseJsonResponse;
+  } catch {
+    throw new Error('Whisper response was not JSON.');
   }
 
-  if (!srt.trim()) {
-    throw new Error('Whisper returned an empty transcript.');
+  if (json.error?.message) {
+    throw new Error(`Whisper: ${json.error.message}`);
   }
-  return srt;
+
+  const segments = json.segments;
+  if (!segments || segments.length === 0) {
+    const head = (json.text ?? '').slice(0, 200);
+    throw new Error(
+      `Whisper returned no timestamped segments. ` +
+        `(text head: ${head ? JSON.stringify(head) : '<empty>'})`,
+    );
+  }
+
+  return segmentsToSrt(segments);
+}
+
+function segmentsToSrt(segments: { start: number; end: number; text: string }[]): string {
+  const out: string[] = [];
+  let cueIdx = 1;
+  for (const seg of segments) {
+    const text = seg.text.trim();
+    if (!text) continue;
+    out.push(String(cueIdx));
+    out.push(`${secondsToSrtTimestamp(seg.start)} --> ${secondsToSrtTimestamp(seg.end)}`);
+    out.push(text);
+    out.push('');
+    cueIdx += 1;
+  }
+  return out.join('\n');
+}
+
+function secondsToSrtTimestamp(s: number): string {
+  const safe = Math.max(0, s);
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = Math.floor(safe % 60);
+  const ms = Math.round((safe - Math.floor(safe)) * 1000);
+  // Edge case: rounding 0.9999 to 1.000 — borrow into seconds.
+  const adjustedMs = ms === 1000 ? 999 : ms;
+  return (
+    String(hours).padStart(2, '0') +
+    ':' +
+    String(minutes).padStart(2, '0') +
+    ':' +
+    String(seconds).padStart(2, '0') +
+    ',' +
+    String(adjustedMs).padStart(3, '0')
+  );
 }
 
 /** Map a filename's extension to the format string OR's API expects. */
