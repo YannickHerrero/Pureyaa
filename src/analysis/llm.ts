@@ -1,4 +1,19 @@
-import type { ModelId } from '@/types';
+/**
+ * Subtitle translation + grammar-note generation via OpenRouter.
+ *
+ * The model is hardcoded to claude-sonnet-4.5 because Sonnet handles
+ * Japanese grammar nuance noticeably better than Haiku or GPT-4o-mini at
+ * a per-episode cost that's effectively rounding error (~$0.03–0.05 per
+ * full episode of analysis). Easy to swap if priorities change.
+ *
+ * The streaming machinery is unusual: RN's `fetch` buffers SSE bodies and
+ * `res.body` is null, so we use XHR which exposes `responseText`
+ * progressively as chunks arrive. The accumulated text feeds an
+ * incremental JSON-array parser so we can show translations to the user
+ * as they're generated rather than waiting for the whole episode.
+ */
+
+import { authHeaders, OPENROUTER_BASE } from '@/openrouter/client';
 
 export interface CueTranslation {
   index: number;
@@ -8,18 +23,14 @@ export interface CueTranslation {
 
 export interface TranslateOptions {
   apiKey: string;
-  model: ModelId;
   cues: { index: number; text: string }[];
   signal?: AbortSignal;
   onItem?: (item: CueTranslation) => void;
   onLog?: (msg: string) => void;
 }
 
-const MODEL_IDS: Record<ModelId, string> = {
-  haiku: 'claude-haiku-4-5',
-  sonnet: 'claude-sonnet-4-6',
-  opus: 'claude-opus-4-7',
-};
+/** OpenRouter model slug. The string is recorded into LibraryEntry.modelUsed. */
+export const ANALYSIS_MODEL = 'anthropic/claude-sonnet-4.5';
 
 const SYSTEM_PROMPT = `You are translating Japanese subtitles to English for a language-learner.
 
@@ -30,9 +41,6 @@ Rules:
 - Output a JSON array with one entry per cue: { "index": number, "translation": string, "grammarNote": string | null }.
 - Output ONLY the JSON array. No prose, no code fences, no commentary.`;
 
-// RN's fetch buffers response bodies — `res.body` is null even for streaming
-// SSE responses. XHR exposes `responseText` progressively as chunks arrive,
-// so we use that to parse Claude's stream incrementally.
 function streamingPost(
   url: string,
   body: string,
@@ -56,10 +64,10 @@ function streamingPost(
       }
       if (xhr.readyState === 4) {
         if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error(`Claude API error ${xhr.status}: ${xhr.responseText.slice(0, 500)}`));
+        else reject(new Error(`OpenRouter HTTP ${xhr.status}: ${xhr.responseText.slice(0, 500)}`));
       }
     };
-    xhr.onerror = () => reject(new Error('Network error talking to Claude'));
+    xhr.onerror = () => reject(new Error('Network error talking to OpenRouter'));
 
     if (signal) {
       const onAbort = () => {
@@ -75,7 +83,7 @@ function streamingPost(
 }
 
 export async function translateCues(opts: TranslateOptions): Promise<CueTranslation[]> {
-  const { apiKey, model, cues, signal, onItem, onLog } = opts;
+  const { apiKey, cues, signal, onItem, onLog } = opts;
   const userMessage = cues.map((c) => `[${c.index}] ${c.text}`).join('\n');
 
   const parser = new IncrementalArrayParser();
@@ -85,7 +93,7 @@ export async function translateCues(opts: TranslateOptions): Promise<CueTranslat
     const it = normalize(raw);
     if (!it) {
       parseFailures += 1;
-      onLog?.(`claude: object failed validation: ${JSON.stringify(raw).slice(0, 120)}`);
+      onLog?.(`llm: object failed validation: ${JSON.stringify(raw).slice(0, 120)}`);
       return;
     }
     items.push(it);
@@ -98,23 +106,24 @@ export async function translateCues(opts: TranslateOptions): Promise<CueTranslat
   let firstChunk = true;
 
   await streamingPost(
-    'https://api.anthropic.com/v1/messages',
+    `${OPENROUTER_BASE}/chat/completions`,
     JSON.stringify({
-      model: MODEL_IDS[model],
+      model: ANALYSIS_MODEL,
       max_tokens: 16384,
       stream: true,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userMessage },
+      ],
     }),
     {
       'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+      ...authHeaders(apiKey),
     },
     (chunk) => {
       chunkCount += 1;
       if (firstChunk) {
-        onLog?.(`claude: first chunk (${chunk.length} bytes)`);
+        onLog?.(`llm: first chunk (${chunk.length} bytes)`);
         firstChunk = false;
       }
       buffer += chunk;
@@ -127,8 +136,10 @@ export async function translateCues(opts: TranslateOptions): Promise<CueTranslat
         if (!payload || payload === '[DONE]') continue;
         try {
           const evt = JSON.parse(payload);
-          if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
-            const t = evt.delta.text ?? '';
+          // OpenAI/OpenRouter SSE delta shape:
+          //   { choices: [{ delta: { content: "text" }, ... }], ... }
+          const t = evt.choices?.[0]?.delta?.content ?? '';
+          if (t) {
             allText += t;
             parser.push(t);
           }
@@ -141,14 +152,14 @@ export async function translateCues(opts: TranslateOptions): Promise<CueTranslat
   );
 
   onLog?.(
-    `claude: stream done — ${chunkCount} chunks, ${allText.length} text chars, ` +
+    `llm: stream done — ${chunkCount} chunks, ${allText.length} text chars, ` +
       `${items.length} items, ${parseFailures} validation failures`,
   );
 
   if (items.length === 0) {
     const head = allText.slice(0, 400);
     throw new Error(
-      `Claude returned 0 valid translations. ` +
+      `LLM returned 0 valid translations. ` +
         `Got ${allText.length} text chars, ${parseFailures} unrecognized objects. ` +
         `First 400 chars of response: ${head || '(empty)'}`,
     );
@@ -249,25 +260,5 @@ export class IncrementalArrayParser {
     }
     // Reached end of buffer without closing — resume here on the next chunk.
     this.scanPos = this.buffer.length;
-  }
-}
-
-export async function testApiKey(apiKey: string, model: ModelId): Promise<void> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: MODEL_IDS[model],
-      max_tokens: 16,
-      messages: [{ role: 'user', content: 'ping' }],
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
   }
 }

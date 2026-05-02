@@ -12,7 +12,7 @@ import { Stack, useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import { AnkiBridge } from 'anki-bridge';
 import { detectFromFilename, titleFromFilename } from '@/utils/filenameDetect';
-import { getApiKey } from '@/storage/settings';
+import { getOpenRouterApiKey } from '@/storage/settings';
 
 interface PickedFile {
   uri: string;
@@ -33,7 +33,7 @@ export default function AddScreen() {
 
   useEffect(() => {
     (async () => {
-      const k = await getApiKey();
+      const k = await getOpenRouterApiKey();
       setHasApiKey(!!k && k.trim().length > 0);
     })();
   }, []);

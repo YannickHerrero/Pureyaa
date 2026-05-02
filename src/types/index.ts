@@ -29,7 +29,8 @@ export interface LibraryEntry {
   retimerState: RetimerState;
   analysisState: AnalysisState;
   analysisError: string | null;
-  modelUsed: ModelId | null;
+  /** OpenRouter model slug recorded at analysis time (e.g. anthropic/claude-sonnet-4.5). */
+  modelUsed: string | null;
   videoUri: string;
   subtitleUri: string;
   analysisDataPath: string;

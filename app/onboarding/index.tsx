@@ -17,9 +17,8 @@ import {
   type InstallStage,
 } from '@/onboarding/dict-installer';
 import { markOnboarded } from '@/onboarding/state';
-import { setApiKey } from '@/storage/settings';
-import { testApiKey } from '@/analysis/claude';
-import { DEFAULT_SETTINGS } from '@/types';
+import { setOpenRouterApiKey } from '@/storage/settings';
+import { testOpenRouterApiKey } from '@/openrouter/client';
 
 type Phase = 'welcome' | 'install' | 'api-key';
 
@@ -80,7 +79,7 @@ function Welcome({ onContinue }: { onContinue: () => void }) {
       <Text style={styles.title}>Welcome to Pureyaa</Text>
       <Text style={styles.copy}>
         We&apos;ll grab the Japanese dictionaries you need (~25 MB) and then ask
-        for your Anthropic API key. One-time setup.
+        for your OpenRouter API key. One-time setup.
       </Text>
       <Pressable style={styles.primary} onPress={onContinue}>
         <Text style={styles.primaryText}>Get started</Text>
@@ -160,8 +159,8 @@ function ApiKey({ onDone }: { onDone: () => void }) {
     setTesting(true);
     setResult(null);
     try {
-      await testApiKey(trimmed, DEFAULT_SETTINGS.modelId);
-      setResult({ ok: true, message: 'Connection successful' });
+      const info = await testOpenRouterApiKey(trimmed);
+      setResult({ ok: true, message: `Connected (${info.label}).` });
     } catch (e) {
       setResult({ ok: false, message: (e as Error).message });
     } finally {
@@ -170,7 +169,7 @@ function ApiKey({ onDone }: { onDone: () => void }) {
   };
 
   const onContinue = async () => {
-    if (trimmed.length > 0) await setApiKey(trimmed);
+    if (trimmed.length > 0) await setOpenRouterApiKey(trimmed);
     await onDone();
   };
 
@@ -180,10 +179,11 @@ function ApiKey({ onDone }: { onDone: () => void }) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.body}>
-        <Text style={styles.title}>Anthropic API key</Text>
+        <Text style={styles.title}>OpenRouter API key</Text>
         <Text style={styles.copy}>
-          Pureyaa uses Claude to translate Japanese subtitles. Get a key at
-          console.anthropic.com — you can also add it later in Settings.
+          Pureyaa uses OpenRouter to call Claude (translation), Whisper
+          (subtitles), and OpenAI TTS through a single key. Create one at
+          openrouter.ai/keys — you can also add it later in Settings.
         </Text>
         <TextInput
           value={key}
@@ -191,7 +191,7 @@ function ApiKey({ onDone }: { onDone: () => void }) {
             setKey(t);
             setResult(null);
           }}
-          placeholder="sk-ant-..."
+          placeholder="sk-or-v1-..."
           placeholderTextColor="#666"
           secureTextEntry
           style={styles.input}

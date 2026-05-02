@@ -1,10 +1,10 @@
 import { File } from 'expo-file-system';
-import type { AnalysisData, Cue, ModelId } from '@/types';
+import type { AnalysisData, Cue } from '@/types';
 import { parseSrt } from './srt';
 import { getTokenizer, tokenize } from './tokenize';
 import { buildMatches } from './match';
 import { loadDictionaries } from './dict';
-import { translateCues } from './claude';
+import { translateCues } from './llm';
 
 export type ProgressEvent =
   | { phase: 'tokenizing'; processed: number; total: number }
@@ -24,7 +24,6 @@ export interface TokenizeOptions {
 
 export interface TranslateAnalysisOptions {
   apiKey: string;
-  model: ModelId;
   onProgress?: (e: ProgressEvent) => void;
   onLog?: (text: string) => void;
   signal?: AbortSignal;
@@ -76,15 +75,14 @@ export async function addTranslations(
   data: AnalysisData,
   opts: TranslateAnalysisOptions,
 ): Promise<void> {
-  const { apiKey, model, onProgress, onLog, signal } = opts;
+  const { apiKey, onProgress, onLog, signal } = opts;
   const log = (s: string) => onLog?.(s);
 
-  log(`requesting translation from Claude (${data.cues.length} lines)`);
+  log(`requesting translation from OpenRouter (${data.cues.length} lines)`);
   const byIndex = new Map<number, Cue>(data.cues.map((c) => [c.index, c]));
   let translatedCount = 0;
   await translateCues({
     apiKey,
-    model,
     cues: data.cues.map((c) => ({ index: c.index, text: c.text })),
     signal,
     onLog: log,

@@ -13,7 +13,8 @@ import {
   tokenizeSubtitles,
   type ProgressEvent,
 } from '@/analysis/orchestrator';
-import { getApiKey, getSettings } from '@/storage/settings';
+import { getOpenRouterApiKey, getSettings } from '@/storage/settings';
+import { ANALYSIS_MODEL } from '@/analysis/llm';
 import {
   analysisPathFor,
   thumbnailPathFor,
@@ -114,7 +115,7 @@ export default function AnalyzeScreen() {
       retimerState: { ...DEFAULT_RETIMER },
       analysisState: 'completed',
       analysisError: null,
-      modelUsed: settings.modelId,
+      modelUsed: ANALYSIS_MODEL,
       videoUri: params.videoUri,
       subtitleUri: params.subtitleUri,
       analysisDataPath,
@@ -132,8 +133,8 @@ export default function AnalyzeScreen() {
     abortRef.current = ctl;
     partialDataRef.current = null;
     try {
-      const apiKey = await getApiKey();
-      if (!apiKey) throw new Error('Missing API key. Set it in Settings.');
+      const apiKey = await getOpenRouterApiKey();
+      if (!apiKey) throw new Error('Missing OpenRouter API key. Set it in Settings.');
       const settings = await getSettings();
       settingsRef.current = settings;
 
@@ -173,7 +174,6 @@ export default function AnalyzeScreen() {
       try {
         await addTranslations(data, {
           apiKey,
-          model: settings.modelId,
           signal: ctl.signal,
           onLog,
           onProgress,
