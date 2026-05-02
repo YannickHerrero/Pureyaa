@@ -11,25 +11,22 @@ import {
 } from 'react-native';
 import { Directory, File, Paths } from 'expo-file-system';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import type { AnkiSettings, AppSettings, AudioMode, ModelId, SubtitleMode } from '@/types';
+import type { AnkiSettings, AppSettings, AudioMode, SubtitleMode } from '@/types';
 import { DEFAULT_ANKI_SETTINGS, DEFAULT_SETTINGS, TTS_VOICES } from '@/types';
 import {
   getSettings,
   saveSettings,
-  getApiKey,
-  setApiKey,
-  clearApiKey,
-  getGoogleTtsApiKey,
-  setGoogleTtsApiKey,
-  clearGoogleTtsApiKey,
+  getOpenRouterApiKey,
+  setOpenRouterApiKey,
+  clearOpenRouterApiKey,
   getWanikaniApiKey,
   setWanikaniApiKey,
   clearWanikaniApiKey,
 } from '@/storage/settings';
 import { getAnkiSettings, saveAnkiSettings } from '@/storage/ankiSettings';
-import { testApiKey } from '@/analysis/claude';
+import { testOpenRouterApiKey } from '@/openrouter/client';
 import { AnkiClient } from '@/anki/client';
-import { synthesizeJapanese, testGoogleTts } from '@/anki/tts';
+import { synthesizeJapanese } from '@/anki/tts';
 import { fetchAllWanikaniKanji, testWanikaniApiKey } from '@/wanikani/api';
 import {
   clearKanjiCache,
@@ -47,7 +44,6 @@ function base64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
-const MODELS: ModelId[] = ['haiku', 'sonnet', 'opus'];
 const SUB_MODES: SubtitleMode[] = ['jp', 'jp+en', 'en'];
 
 const MODE_LABELS: Record<SubtitleMode, string> = {
@@ -64,15 +60,6 @@ export default function SettingsScreen() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [ttsKey, setTtsKey] = useState<string>('');
-  const [ttsKeyDirty, setTtsKeyDirty] = useState(false);
-  const [ttsTesting, setTtsTesting] = useState(false);
-  const [ttsResult, setTtsResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [wkKey, setWkKey] = useState<string>('');
-  const [wkSyncing, setWkSyncing] = useState(false);
-  const [wkProgress, setWkProgress] = useState<{ done: number; total: number } | null>(null);
-  const [wkResult, setWkResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [wkStats, setWkStats] = useState<KanjiCacheStats | null>(null);
   const [previewLoadingVoice, setPreviewLoadingVoice] = useState<string | null>(null);
   const previewCacheRef = useRef<Map<string, string>>(new Map());
   const [previewUri, setPreviewUri] = useState<string | null>(null);
@@ -80,55 +67,65 @@ export default function SettingsScreen() {
     p.loop = false;
     p.muted = false;
   });
+  const [wkKey, setWkKey] = useState<string>('');
+  const [wkSyncing, setWkSyncing] = useState(false);
+  const [wkProgress, setWkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [wkResult, setWkResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [wkStats, setWkStats] = useState<KanjiCacheStats | null>(null);
 
   useEffect(() => {
     (async () => {
-      const [s, a, k, t, w, ws] = await Promise.all([
+      const [s, a, k, w, ws] = await Promise.all([
         getSettings(),
         getAnkiSettings(),
-        getApiKey(),
-        getGoogleTtsApiKey(),
+        getOpenRouterApiKey(),
         getWanikaniApiKey(),
         getKanjiCacheStats(),
       ]);
       setSettings(s);
       setAnki(a);
       setApiKeyState(k ?? '');
-      setTtsKey(t ?? '');
       setWkKey(w ?? '');
       setWkStats(ws);
       setLoaded(true);
     })();
   }, []);
 
-  const onSaveTtsKey = async () => {
-    const trimmed = ttsKey.trim();
-    if (trimmed.length === 0) await clearGoogleTtsApiKey();
-    else await setGoogleTtsApiKey(trimmed);
-    setTtsKeyDirty(false);
-    setTtsResult(null);
+  const onSaveKey = async () => {
+    const trimmed = apiKey.trim();
+    if (trimmed.length === 0) {
+      await clearOpenRouterApiKey();
+    } else {
+      await setOpenRouterApiKey(trimmed);
+    }
+    setKeyDirty(false);
+    setTestResult(null);
   };
 
-  const onTestTts = async () => {
-    if (ttsKey.trim().length === 0) return;
-    setTtsTesting(true);
-    setTtsResult(null);
+  const onTest = async () => {
+    if (!loaded || apiKey.trim().length === 0) return;
+    setTesting(true);
+    setTestResult(null);
     try {
-      const trimmed = ttsKey.trim();
-      if (ttsKeyDirty) await setGoogleTtsApiKey(trimmed);
-      await testGoogleTts(trimmed, anki.ttsVoice);
-      setTtsKeyDirty(false);
-      setTtsResult({ ok: true, message: 'Synthesis successful.' });
+      const trimmed = apiKey.trim();
+      if (keyDirty) await setOpenRouterApiKey(trimmed);
+      const info = await testOpenRouterApiKey(trimmed);
+      setKeyDirty(false);
+      setTestResult({
+        ok: true,
+        message: `Connected as "${info.label}" — used $${info.usage.toFixed(2)}` +
+          (info.limit != null ? ` of $${info.limit.toFixed(2)}` : ''),
+      });
     } catch (e) {
-      setTtsResult({ ok: false, message: (e as Error).message });
+      setTestResult({ ok: false, message: (e as Error).message });
     } finally {
-      setTtsTesting(false);
+      setTesting(false);
     }
   };
 
   const playVoicePreview = async (voiceId: string) => {
-    const apiKey = ttsKey.trim();
-    if (!apiKey) return; // need a key to synthesize
+    const key = apiKey.trim();
+    if (!key) return; // need a key to synthesize
 
     let uri = previewCacheRef.current.get(voiceId);
     if (!uri) {
@@ -137,7 +134,7 @@ export default function SettingsScreen() {
         const tts = await synthesizeJapanese({
           text: VOICE_PREVIEW_TEXT,
           voiceName: voiceId,
-          apiKey,
+          apiKey: key,
           outputId: `preview_${voiceId}`,
         });
         const cacheDir = new Directory(Paths.cache, 'tts-preview');
@@ -148,7 +145,7 @@ export default function SettingsScreen() {
         uri = file.uri;
         previewCacheRef.current.set(voiceId, uri);
       } catch (e) {
-        setTtsResult({ ok: false, message: (e as Error).message });
+        setTestResult({ ok: false, message: (e as Error).message });
         return;
       } finally {
         setPreviewLoadingVoice(null);
@@ -165,10 +162,15 @@ export default function SettingsScreen() {
     }
   };
 
+  const updateAnki = async (patch: Partial<AnkiSettings>) => {
+    const next = { ...anki, ...patch };
+    setAnki(next);
+    await saveAnkiSettings(next);
+  };
+
   const onSyncWanikani = async () => {
     const trimmed = wkKey.trim();
     if (trimmed.length === 0) {
-      // Empty input means "disconnect"
       await clearWanikaniApiKey();
       await clearKanjiCache();
       setWkStats(null);
@@ -197,12 +199,6 @@ export default function SettingsScreen() {
       setWkSyncing(false);
       setWkProgress(null);
     }
-  };
-
-  const updateAnki = async (patch: Partial<AnkiSettings>) => {
-    const next = { ...anki, ...patch };
-    setAnki(next);
-    await saveAnkiSettings(next);
   };
 
   const [ankiTesting, setAnkiTesting] = useState(false);
@@ -249,34 +245,6 @@ export default function SettingsScreen() {
     await saveSettings(next);
   };
 
-  const onSaveKey = async () => {
-    const trimmed = apiKey.trim();
-    if (trimmed.length === 0) {
-      await clearApiKey();
-    } else {
-      await setApiKey(trimmed);
-    }
-    setKeyDirty(false);
-    setTestResult(null);
-  };
-
-  const onTest = async () => {
-    if (!loaded || apiKey.trim().length === 0) return;
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const trimmed = apiKey.trim();
-      if (keyDirty) await setApiKey(trimmed);
-      await testApiKey(trimmed, settings.modelId);
-      setKeyDirty(false);
-      setTestResult({ ok: true, message: 'Connection successful' });
-    } catch (e) {
-      setTestResult({ ok: false, message: (e as Error).message });
-    } finally {
-      setTesting(false);
-    }
-  };
-
   if (!loaded) {
     return (
       <View style={styles.loading}>
@@ -287,15 +255,15 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Section title="LLM configuration">
-        <Label>Anthropic API key</Label>
+      <Section title="OpenRouter API key">
+        <Label>One key for analysis (Claude), TTS (OpenAI), and Whisper</Label>
         <TextInput
           value={apiKey}
           onChangeText={(t) => {
             setApiKeyState(t);
             setKeyDirty(true);
           }}
-          placeholder="sk-ant-..."
+          placeholder="sk-or-v1-..."
           placeholderTextColor="#666"
           secureTextEntry
           style={styles.input}
@@ -324,19 +292,6 @@ export default function SettingsScreen() {
             {testResult.message}
           </Text>
         )}
-
-        <Label>Model</Label>
-        <View style={styles.choiceRow}>
-          {MODELS.map((m) => (
-            <Pressable
-              key={m}
-              style={[styles.choice, settings.modelId === m && styles.choiceActive]}
-              onPress={() => update({ modelId: m })}
-            >
-              <Text style={styles.choiceText}>{m}</Text>
-            </Pressable>
-          ))}
-        </View>
       </Section>
 
       <Section title="Anki">
@@ -357,44 +312,6 @@ export default function SettingsScreen() {
 
         {anki.audioMode === 'tts' && (
           <View style={styles.ttsBlock}>
-            <Label>Google Cloud TTS API key</Label>
-            <TextInput
-              value={ttsKey}
-              onChangeText={(t) => {
-                setTtsKey(t);
-                setTtsKeyDirty(true);
-                setTtsResult(null);
-              }}
-              placeholder="AIza..."
-              placeholderTextColor="#666"
-              secureTextEntry
-              style={styles.input}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <View style={styles.row}>
-              <Pressable
-                style={[styles.button, !ttsKeyDirty && styles.buttonDisabled]}
-                disabled={!ttsKeyDirty}
-                onPress={onSaveTtsKey}
-              >
-                <Text style={styles.buttonText}>Save</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.button, (ttsTesting || ttsKey.trim().length === 0) && styles.buttonDisabled]}
-                disabled={ttsTesting || ttsKey.trim().length === 0}
-                onPress={onTestTts}
-              >
-                <Text style={styles.buttonText}>{ttsTesting ? 'Testing…' : 'Test TTS'}</Text>
-              </Pressable>
-            </View>
-            {ttsResult && (
-              <Text style={[styles.testResult, ttsResult.ok ? styles.ok : styles.bad]}>
-                {ttsResult.ok ? '✓ ' : '✗ '}
-                {ttsResult.message}
-              </Text>
-            )}
-
             <Label>TTS voice (tap to preview)</Label>
             <View style={styles.choiceRow}>
               {TTS_VOICES.map((v) => (

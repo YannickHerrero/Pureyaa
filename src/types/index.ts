@@ -1,4 +1,3 @@
-export type ModelId = 'haiku' | 'sonnet' | 'opus';
 export type AnalysisState = 'pending' | 'analyzing' | 'completed' | 'failed';
 export type SubtitleMode = 'jp' | 'jp+en' | 'en';
 export type DictName = 'jmdict' | 'jmnedict';
@@ -86,13 +85,11 @@ export interface SavedWord {
 }
 
 export interface AppSettings {
-  modelId: ModelId;
   autoPauseAtLineEnd: boolean;
   defaultSubtitleMode: SubtitleMode;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  modelId: 'haiku',
   autoPauseAtLineEnd: false,
   defaultSubtitleMode: 'jp',
 };
