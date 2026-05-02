@@ -10,9 +10,13 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
+import { Directory, File, Paths } from 'expo-file-system';
 import { AnkiBridge } from 'anki-bridge';
+import { extractAudio } from 'audio-extract';
 import { detectFromFilename, titleFromFilename } from '@/utils/filenameDetect';
 import { getOpenRouterApiKey } from '@/storage/settings';
+import { audioMimeForFilename, transcribeToSrt } from '@/openrouter/transcribe';
+import { uuid } from '@/utils/uuid';
 
 interface PickedFile {
   uri: string;
@@ -30,6 +34,8 @@ export default function AddScreen() {
   const [noSeries, setNoSeries] = useState<boolean>(false);
   const [picking, setPicking] = useState<'video' | 'srt' | null>(null);
   const [hasApiKey, setHasApiKey] = useState<boolean>(true);
+  const [generating, setGenerating] = useState<'extracting' | 'transcribing' | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -75,6 +81,64 @@ export default function AddScreen() {
     }
   };
 
+  const generateSubtitle = async () => {
+    if (!video || generating) return;
+    setGenerateError(null);
+    setGenerating('extracting');
+    let audioPath: string | null = null;
+    try {
+      const apiKey = await getOpenRouterApiKey();
+      if (!apiKey) {
+        throw new Error('Set your OpenRouter API key in Settings first.');
+      }
+
+      const id = uuid().replace(/-/g, '').slice(0, 12);
+      const audioDir = new Directory(Paths.cache, 'whisper-audio');
+      if (!audioDir.exists) audioDir.create({ intermediates: true });
+      const audioRequested = new File(audioDir, `audio_${id}.m4a`).uri;
+
+      // Extract the full audio track. endMs is generous on purpose — the
+      // Kotlin extractor stops naturally at EOS (sampleData < 0) regardless.
+      audioPath = await extractAudio(video.uri, {
+        startMs: 0,
+        endMs: 2_000_000_000,
+        outPath: audioRequested,
+      });
+
+      setGenerating('transcribing');
+      const audioFilename = audioPath.split('/').pop() ?? 'audio.m4a';
+      const srt = await transcribeToSrt({
+        apiKey,
+        audioUri: audioPath,
+        audioMime: audioMimeForFilename(audioFilename),
+      });
+
+      const subDir = new Directory(Paths.cache, 'whisper-subs');
+      if (!subDir.exists) subDir.create({ intermediates: true });
+      const baseName = (title.trim() || video.name.replace(/\.[^.]+$/, '')) || 'whisper';
+      const subFilename = `${baseName}.whisper.srt`;
+      const subFile = new File(subDir, subFilename);
+      if (subFile.exists) subFile.delete();
+      subFile.write(srt);
+
+      setSubtitle({ uri: subFile.uri, name: subFilename, size: srt.length });
+    } catch (e) {
+      setGenerateError((e as Error).message);
+    } finally {
+      setGenerating(null);
+      // Best-effort cleanup of the temp audio file. Cache is OS-evictable
+      // anyway, so failures don't matter.
+      if (audioPath) {
+        try {
+          const af = new File(audioPath);
+          if (af.exists) af.delete();
+        } catch {
+          // ignore
+        }
+      }
+    }
+  };
+
   const onConfirm = () => {
     if (!video || !subtitle || !title.trim() || !hasApiKey) return;
     const params = {
@@ -107,8 +171,33 @@ export default function AddScreen() {
           title="Pick .srt subtitle"
           status={subtitle ? subtitle.name : picking === 'srt' ? 'Picking…' : 'Not selected'}
           onPress={pickSubtitle}
-          disabled={picking !== null || !video}
+          disabled={picking !== null || !video || generating !== null}
         />
+
+        {video && !subtitle && (
+          <Pressable
+            style={[styles.altAction, generating !== null && styles.altActionBusy]}
+            onPress={generateSubtitle}
+            disabled={generating !== null || !hasApiKey}
+          >
+            {generating ? (
+              <>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text style={styles.altActionText}>
+                  {generating === 'extracting' ? 'Extracting audio…' : 'Transcribing with Whisper…'}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.altActionText}>
+                or generate subtitle with Whisper
+                {!hasApiKey ? ' (set API key first)' : ''}
+              </Text>
+            )}
+          </Pressable>
+        )}
+        {generateError && (
+          <Text style={styles.warning}>Whisper: {generateError}</Text>
+        )}
 
         {video && (
           <View style={styles.section}>
@@ -241,6 +330,20 @@ const styles = StyleSheet.create({
   checkboxBoxOn: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
   checkboxLabel: { color: '#fff' },
   warning: { color: '#f59e0b', fontSize: 14, textAlign: 'center', marginTop: 8 },
+  altAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#0f1f3a',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#1e3a8a',
+  },
+  altActionBusy: { opacity: 0.8 },
+  altActionText: { color: '#dbeafe', fontSize: 14, fontWeight: '500' },
   confirm: {
     backgroundColor: '#3b82f6',
     borderRadius: 8,
