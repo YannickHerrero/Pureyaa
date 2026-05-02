@@ -15,7 +15,7 @@ import { AnkiBridge } from 'anki-bridge';
 import { extractAudio } from 'audio-extract';
 import { detectFromFilename, titleFromFilename } from '@/utils/filenameDetect';
 import { getOpenRouterApiKey } from '@/storage/settings';
-import { audioMimeForFilename, transcribeToSrt } from '@/openrouter/transcribe';
+import { audioFormatForFilename, transcribeToSrt } from '@/openrouter/transcribe';
 import { uuid } from '@/utils/uuid';
 
 interface PickedFile {
@@ -110,7 +110,7 @@ export default function AddScreen() {
       const srt = await transcribeToSrt({
         apiKey,
         audioUri: audioPath,
-        audioMime: audioMimeForFilename(audioFilename),
+        audioFormat: audioFormatForFilename(audioFilename),
       });
 
       const subDir = new Directory(Paths.cache, 'whisper-subs');
