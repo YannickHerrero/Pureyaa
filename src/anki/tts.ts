@@ -1,21 +1,37 @@
 /**
- * Google Cloud Text-to-Speech client.
+ * Japanese text-to-speech via OpenRouter.
  *
- * Uses the `text:synthesize` REST endpoint with API key auth — no SDK,
- * just fetch with a JSON body. Response is `{ audioContent: <base64 mp3> }`,
- * which we hand straight to the Anki bridge's `storeMedia`.
+ * OpenRouter doesn't expose a dedicated /audio/speech endpoint; instead,
+ * audio output happens through the chat-completions API with the audio
+ * modality enabled on `openai/gpt-4o-audio-preview`. The response carries
+ * the synthesized audio as base64 mp3 inside `choices[0].message.audio.data`,
+ * which we hand straight to AnkiBridge.storeMedia for the card.
  *
- * Pricing (May 2026): Chirp 3 HD voices are $30 per 1M chars; the first
- * 1M chars per month are free, which covers any realistic mining usage.
+ * Quality on Japanese is below Google's Chirp 3 HD voices, but the
+ * single-key tradeoff is worth it for this app's scope.
  */
 
-const ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize';
+import { authHeaders, OPENROUTER_BASE } from '@/openrouter/client';
+
+const TTS_MODEL = 'openai/gpt-4o-audio-preview';
 
 export interface TtsResult {
   /** Filename to use in the [sound:...] field. */
   filename: string;
   /** Base64-encoded mp3 — pass straight to AnkiBridge.storeMedia. */
   base64: string;
+}
+
+interface ChatAudioResponse {
+  choices?: Array<{
+    message?: {
+      audio?: {
+        data?: string;
+        format?: string;
+      };
+    };
+  }>;
+  error?: { message?: string };
 }
 
 export async function synthesizeJapanese(args: {
@@ -25,48 +41,54 @@ export async function synthesizeJapanese(args: {
   outputId: string;
 }): Promise<TtsResult> {
   const { text, voiceName, apiKey, outputId } = args;
-  const url = `${ENDPOINT}?key=${encodeURIComponent(apiKey)}`;
-  const body = JSON.stringify({
-    input: { text },
-    voice: { languageCode: 'ja-JP', name: voiceName },
-    audioConfig: { audioEncoding: 'MP3' },
-  });
 
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body,
+      headers: {
+        'content-type': 'application/json',
+        ...authHeaders(apiKey),
+      },
+      body: JSON.stringify({
+        model: TTS_MODEL,
+        modalities: ['text', 'audio'],
+        audio: { voice: voiceName, format: 'mp3' },
+        messages: [{ role: 'user', content: text }],
+      }),
     });
   } catch (e) {
-    throw new Error(`Google TTS network error: ${(e as Error).message}`);
+    throw new Error(`OpenRouter TTS network error: ${(e as Error).message}`);
   }
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new Error(`Google TTS HTTP ${res.status}: ${errBody.slice(0, 300)}`);
+    throw new Error(`OpenRouter TTS HTTP ${res.status}: ${errBody.slice(0, 300)}`);
   }
 
-  let json: { audioContent?: string };
+  let json: ChatAudioResponse;
   try {
-    json = await res.json();
+    json = (await res.json()) as ChatAudioResponse;
   } catch {
-    throw new Error('Google TTS returned non-JSON');
+    throw new Error('OpenRouter TTS returned non-JSON');
   }
 
-  if (!json.audioContent) {
-    throw new Error('Google TTS response missing audioContent');
+  const audio = json.choices?.[0]?.message?.audio?.data;
+  if (!audio) {
+    throw new Error(
+      `OpenRouter TTS response missing audio data` +
+        (json.error?.message ? ` (${json.error.message})` : ''),
+    );
   }
 
   return {
     filename: `pureyaa_tts_${outputId}.mp3`,
-    base64: json.audioContent,
+    base64: audio,
   };
 }
 
-/** Quick health check used by the settings test button. */
-export async function testGoogleTts(apiKey: string, voiceName: string): Promise<void> {
+/** Quick health check used by the settings test button (synthesizes "テスト"). */
+export async function testTts(apiKey: string, voiceName: string): Promise<void> {
   await synthesizeJapanese({
     text: 'テスト',
     voiceName,

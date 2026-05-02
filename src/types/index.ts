@@ -114,16 +114,20 @@ export const DEFAULT_ANKI_SETTINGS: AnkiSettings = {
   audioPaddingBeforeMs: 500,
   audioPaddingAfterMs: 500,
   audioMode: 'original',
-  ttsVoice: 'ja-JP-Chirp3-HD-Kore',
+  // OpenAI gpt-4o-audio-preview voices via OpenRouter. Nova handles
+  // Japanese reasonably well — warm female timbre with decent prosody.
+  ttsVoice: 'nova',
 };
 
 export const TTS_VOICES: { id: string; label: string }[] = [
-  { id: 'ja-JP-Chirp3-HD-Kore', label: 'Kore (F, Chirp 3 HD)' },
-  { id: 'ja-JP-Chirp3-HD-Aoede', label: 'Aoede (F, Chirp 3 HD)' },
-  { id: 'ja-JP-Chirp3-HD-Leda', label: 'Leda (F, Chirp 3 HD)' },
-  { id: 'ja-JP-Chirp3-HD-Zephyr', label: 'Zephyr (F, Chirp 3 HD)' },
-  { id: 'ja-JP-Chirp3-HD-Puck', label: 'Puck (M, Chirp 3 HD)' },
-  { id: 'ja-JP-Chirp3-HD-Charon', label: 'Charon (M, Chirp 3 HD)' },
-  { id: 'ja-JP-Chirp3-HD-Fenrir', label: 'Fenrir (M, Chirp 3 HD)' },
-  { id: 'ja-JP-Chirp3-HD-Orus', label: 'Orus (M, Chirp 3 HD)' },
+  { id: 'nova', label: 'Nova (F, warm)' },
+  { id: 'shimmer', label: 'Shimmer (F, bright)' },
+  { id: 'coral', label: 'Coral (F, lively)' },
+  { id: 'sage', label: 'Sage (F, thoughtful)' },
+  { id: 'alloy', label: 'Alloy (neutral)' },
+  { id: 'echo', label: 'Echo (M, baritone)' },
+  { id: 'fable', label: 'Fable (M, British)' },
+  { id: 'onyx', label: 'Onyx (M, deep)' },
+  { id: 'ash', label: 'Ash (M, crisp)' },
+  { id: 'ballad', label: 'Ballad (M, soft)' },
 ];

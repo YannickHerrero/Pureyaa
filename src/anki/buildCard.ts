@@ -2,7 +2,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { extractAudio } from 'audio-extract';
 import { extractThumbnail } from '@/utils/thumbnail';
 import { uuid } from '@/utils/uuid';
-import { getGoogleTtsApiKey } from '@/storage/settings';
+import { getOpenRouterApiKey } from '@/storage/settings';
 import { effectiveStartMs, effectiveEndMs } from '@/utils/time';
 import type { AnkiSettings, Cue, DictName, LibraryEntry } from '@/types';
 import type { DictEntry } from '@/analysis/dict';
@@ -144,9 +144,9 @@ export async function buildCardAssets(args: {
     audioBase64 = await new File(audioPath).base64();
   } else if (settings.audioMode === 'tts') {
     console.log(`[buildCard] audio (tts): voice=${settings.ttsVoice} text="${cue.text}"`);
-    const apiKey = await getGoogleTtsApiKey();
+    const apiKey = await getOpenRouterApiKey();
     if (!apiKey) {
-      throw new Error('Google TTS API key not set. Add it in Settings → Anki.');
+      throw new Error('OpenRouter API key not set. Add it in Settings.');
     }
     try {
       const tts = await synthesizeJapanese({
