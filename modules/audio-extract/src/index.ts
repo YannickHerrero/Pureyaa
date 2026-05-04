@@ -1,10 +1,30 @@
+import { Platform } from 'react-native';
 import { requireNativeModule } from 'expo-modules-core';
 
 interface AudioExtractNativeModule {
   extractAudio(srcUri: string, startMs: number, endMs: number, outPath: string): Promise<string>;
 }
 
-const native = requireNativeModule<AudioExtractNativeModule>('AudioExtract');
+/**
+ * iOS implementation lands in Phase 3 of the iOS port. Until then, calling
+ * extractAudio on iOS rejects clearly so we can build for iOS without the
+ * native module being registered.
+ */
+function unavailableShim(): AudioExtractNativeModule {
+  return new Proxy({} as AudioExtractNativeModule, {
+    get(_target, prop) {
+      return () =>
+        Promise.reject(
+          new Error(`AudioExtract.${String(prop)} is not yet implemented on iOS.`),
+        );
+    },
+  });
+}
+
+const native: AudioExtractNativeModule =
+  Platform.OS === 'android'
+    ? requireNativeModule<AudioExtractNativeModule>('AudioExtract')
+    : unavailableShim();
 
 export interface ExtractAudioOptions {
   startMs: number;
