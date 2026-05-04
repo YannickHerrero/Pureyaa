@@ -28,6 +28,7 @@ import { testOpenRouterApiKey } from '@/openrouter/client';
 import { AnkiClient } from '@/anki/client';
 import { synthesizeJapanese } from '@/anki/tts';
 import { fetchAllWanikaniKanji, testWanikaniApiKey } from '@/wanikani/api';
+import { ANKI_AVAILABLE } from '@/featureFlags';
 import {
   clearKanjiCache,
   getKanjiCacheStats,
@@ -294,8 +295,9 @@ export default function SettingsScreen() {
         )}
       </Section>
 
-      <Section title="Anki">
-        <Label>Audio source</Label>
+      {ANKI_AVAILABLE && (
+        <Section title="Anki">
+          <Label>Audio source</Label>
         <View style={styles.choiceRow}>
           {(['original', 'tts', 'none'] as AudioMode[]).map((m) => (
             <Pressable
@@ -379,7 +381,8 @@ export default function SettingsScreen() {
             {ankiResult.message}
           </Text>
         )}
-      </Section>
+        </Section>
+      )}
 
       <Section title="WaniKani (kanji info on cards)">
         <Label>Personal access token</Label>

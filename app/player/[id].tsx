@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { showToast } from '@/ui/Toast';
+import { ANKI_AVAILABLE } from '@/featureFlags';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as DocumentPicker from 'expo-document-picker';
@@ -438,19 +439,25 @@ function Player({
         tokenIndex={popup?.tokenIndex ?? 0}
         sourceEntryId={entry.id}
         onClose={() => setPopup(null)}
-        onAddToAnki={(cue, dict, dictEntry, tokenSpan) => {
-          setPopup(null);
-          setAnkiPreview({ cue, dict, dictEntry, tokenSpan });
-        }}
+        onAddToAnki={
+          ANKI_AVAILABLE
+            ? (cue, dict, dictEntry, tokenSpan) => {
+                setPopup(null);
+                setAnkiPreview({ cue, dict, dictEntry, tokenSpan });
+              }
+            : undefined
+        }
       />
-      <AnkiPreviewSheet
-        visible={ankiPreview !== null}
-        args={ankiPreview}
-        entry={entry}
-        settings={ankiSettings}
-        onClose={() => setAnkiPreview(null)}
-        onSent={() => showToast('Card added to Anki')}
-      />
+      {ANKI_AVAILABLE && (
+        <AnkiPreviewSheet
+          visible={ankiPreview !== null}
+          args={ankiPreview}
+          entry={entry}
+          settings={ankiSettings}
+          onClose={() => setAnkiPreview(null)}
+          onSent={() => showToast('Card added to Anki')}
+        />
+      )}
     </View>
   );
 }
