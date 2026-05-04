@@ -49,6 +49,14 @@
     "updates": {
       "url": "https://u.expo.dev/6bd145bf-f059-435e-9d30-eb5b9ca19864"
     },
-    "ios": {}
+    "ios": {
+      "bundleIdentifier": "com.pureyaa.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true
+      }
+    }
   }
 }
