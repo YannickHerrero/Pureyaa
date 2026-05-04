@@ -64,6 +64,13 @@ public class FileAccessModule: Module {
     }
 
     AsyncFunction("beginSession") { (handle: String) -> String in
+      // Handles to files we own (e.g. subtitle SRTs we wrote to the app
+      // sandbox) are plain file URLs, not bookmarks. Pass them through
+      // without opening a security scope — there's nothing to scope.
+      if handle.hasPrefix("file://") || handle.hasPrefix("/") {
+        return handle
+      }
+
       guard let bookmarkData = Data(base64Encoded: handle) else {
         throw FileAccessError.invalidInput("Handle is not valid base64")
       }
