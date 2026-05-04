@@ -17,6 +17,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "anki-bridge": "file:./modules/anki-bridge",
     "audio-extract": "file:./modules/audio-extract",
+    "file-access": "file:./modules/file-access",
     "expo": "~55.0.18",
     "expo-asset": "^55.0.16",
     "expo-constants": "~55.0.15",

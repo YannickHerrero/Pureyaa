@@ -1,0 +1,7 @@
+{
+  "name": "file-access",
+  "version": "1.0.0",
+  "description": "Local Expo Module: persistent SAF / security-scoped bookmark access for picked files.",
+  "main": "src/index.ts",
+  "private": true
+}
