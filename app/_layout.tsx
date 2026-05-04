@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { Platform, ToastAndroid } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -8,6 +7,7 @@ import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isOnboarded } from '@/onboarding/state';
 import { STORAGE_KEYS } from '@/storage/keys';
+import { showToast, ToastHost } from '@/ui/Toast';
 
 /**
  * Show a toast the first time we boot into a freshly-applied OTA update.
@@ -24,8 +24,8 @@ function useOtaUpdateToast() {
       if (!current) return;
       const last = await AsyncStorage.getItem(STORAGE_KEYS.lastSeenUpdateId);
       await AsyncStorage.setItem(STORAGE_KEYS.lastSeenUpdateId, current);
-      if (last && last !== current && Platform.OS === 'android') {
-        ToastAndroid.show('✓ Updated to latest version', ToastAndroid.SHORT);
+      if (last && last !== current) {
+        showToast('Updated to latest version');
       }
     })();
   }, []);
@@ -56,6 +56,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="onboarding" />
         </Stack>
+        <ToastHost />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

@@ -5,11 +5,10 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
-  ToastAndroid,
-  Platform,
   Alert,
   useWindowDimensions,
 } from 'react-native';
+import { showToast } from '@/ui/Toast';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as DocumentPicker from 'expo-document-picker';
@@ -450,13 +449,7 @@ function Player({
         entry={entry}
         settings={ankiSettings}
         onClose={() => setAnkiPreview(null)}
-        onSent={() => {
-          if (Platform.OS === 'android') {
-            ToastAndroid.show('Card added to Anki', ToastAndroid.SHORT);
-          } else {
-            Alert.alert('Card added', `Sent to ${ankiSettings.defaultDeckName}.`);
-          }
-        }}
+        onSent={() => showToast('Card added to Anki')}
       />
     </View>
   );
