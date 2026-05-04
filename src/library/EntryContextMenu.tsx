@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, View, Text, Pressable, StyleSheet, TextInput, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { AnkiBridge } from 'anki-bridge';
+import { FileAccess, withSession } from 'file-access';
 import { File } from 'expo-file-system';
 import type { LibraryEntry } from '@/types';
 import { upsertEntry, deleteEntry } from '@/storage/entries';
@@ -71,9 +71,8 @@ export function EntryContextMenu({
       copyToCacheDirectory: false,
     });
     if (r.canceled) return;
-    const uri = r.assets[0].uri;
-    await AnkiBridge.persistUriPermission(uri);
-    await upsertEntry({ ...entry, videoUri: uri });
+    const handle = await FileAccess.persistFileAccess(r.assets[0].uri);
+    await upsertEntry({ ...entry, videoUri: handle });
     onChanged();
     close();
   };
@@ -82,7 +81,9 @@ export function EntryContextMenu({
     try {
       const dest = await thumbnailPathFor(entry.id);
       const positionMs = Math.max(0, Math.floor(entry.durationSeconds * 1000 * 0.1));
-      await extractThumbnail(entry.videoUri, dest, positionMs);
+      await withSession(entry.videoUri, (url) =>
+        extractThumbnail(url, dest, positionMs),
+      );
       await upsertEntry({ ...entry, thumbnailPath: dest });
       onChanged();
       close();
@@ -101,6 +102,13 @@ export function EntryContextMenu({
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            // Drop the persistent file-access handle before forgetting
+            // the entry. Idempotent on Android, frees the iOS bookmark.
+            try {
+              await FileAccess.releaseFileAccess(entry.videoUri);
+            } catch {
+              // ignore — best-effort cleanup
+            }
             await deleteEntry(entry.id);
             onChanged();
             close();

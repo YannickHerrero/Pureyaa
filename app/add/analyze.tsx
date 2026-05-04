@@ -15,7 +15,7 @@ import {
 } from '@/analysis/orchestrator';
 import { getOpenRouterApiKey, getSettings } from '@/storage/settings';
 import { ANALYSIS_MODEL } from '@/analysis/llm';
-import { AnkiBridge } from 'anki-bridge';
+import { FileAccess, withSession } from 'file-access';
 import {
   analysisPathFor,
   thumbnailPathFor,
@@ -93,7 +93,9 @@ export default function AnalyzeScreen() {
     try {
       const lastCueEndMs = data.cues[data.cues.length - 1]?.endMs ?? 0;
       const positionMs = Math.max(0, Math.floor(lastCueEndMs * 0.1));
-      const t = await extractThumbnail(params.videoUri, thumbPath, positionMs);
+      const t = await withSession(params.videoUri, (url) =>
+        extractThumbnail(url, thumbPath, positionMs),
+      );
       thumbnailPath = t.uri;
       aspectRatio = t.width > 0 && t.height > 0 ? t.width / t.height : aspectRatio;
       durationSeconds = Math.ceil(lastCueEndMs / 1000);
@@ -104,13 +106,15 @@ export default function AnalyzeScreen() {
     // Defensive re-persist: pickVideo took permission on the URI it got
     // back from the picker, but expo-router URL-encodes URIs into the
     // navigation state — params.videoUri here may have a slightly
-    // different encoding than the original. Take permission again on
-    // the exact string we're about to save into the entry. No-op when
-    // the encoding round-trip was lossless.
+    // different encoding than the original. Re-take permission on the
+    // exact string we're about to save into the entry. On Android this
+    // is takePersistableUriPermission again (idempotent on the canonical
+    // form). On iOS the input is a bookmark blob; the native module
+    // detects that and no-ops.
     try {
-      await AnkiBridge.persistUriPermission(params.videoUri);
+      await FileAccess.persistFileAccess(params.videoUri);
     } catch {
-      // Already swallowed inside the bridge; ignore here too.
+      // bridge swallows already; ignore here too.
     }
 
     const ep = parseInt(params.episodeNumber ?? '', 10);

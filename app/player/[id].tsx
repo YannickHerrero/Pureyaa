@@ -13,7 +13,7 @@ import { ANKI_AVAILABLE } from '@/featureFlags';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as DocumentPicker from 'expo-document-picker';
-import { AnkiBridge } from 'anki-bridge';
+import { FileAccess } from 'file-access';
 import * as NavigationBar from 'expo-navigation-bar';
 import { setStatusBarHidden } from 'expo-status-bar';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -130,15 +130,15 @@ function Relocate({
         copyToCacheDirectory: which === 'subtitle',
       });
       if (r.canceled) return;
-      const uri = r.assets[0].uri;
-      // Video URIs aren't copied to cache (they'd be huge); persist the
-      // SAF permission so the URI keeps working after an app restart.
-      // No-ops for the subtitle path which already resolves to file://.
-      if (which === 'video') {
-        await AnkiBridge.persistUriPermission(uri);
-      }
+      const pickedUri = r.assets[0].uri;
+      // Video URIs aren't copied to cache (they'd be huge); persist
+      // access so the handle keeps working after an app restart.
+      // The subtitle path is already a cache file://, no persistence
+      // needed.
+      const stored =
+        which === 'video' ? await FileAccess.persistFileAccess(pickedUri) : pickedUri;
       const updated: LibraryEntry =
-        which === 'video' ? { ...entry, videoUri: uri } : { ...entry, subtitleUri: uri };
+        which === 'video' ? { ...entry, videoUri: stored } : { ...entry, subtitleUri: stored };
       await upsertEntry(updated);
       onRelocated(updated);
     } finally {
@@ -147,6 +147,11 @@ function Relocate({
   };
 
   const onDelete = async () => {
+    try {
+      await FileAccess.releaseFileAccess(entry.videoUri);
+    } catch {
+      // best-effort
+    }
     await deleteEntry(entry.id);
     router.replace('/library');
   };
@@ -181,7 +186,34 @@ function Player({
   const { entry, analysis } = data;
   const cues = analysis.cues;
 
-  const player = useVideoPlayer(entry.videoUri, (p) => {
+  // Open a long-lived FileAccess session against the entry's video handle
+  // so iOS holds the security-scoped resource open for the lifetime of
+  // the player screen. Android beginSession returns the URI verbatim, so
+  // playerSource resolves on the next tick — no behavioral change.
+  const [playerSource, setPlayerSource] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let openedHandle: string | null = null;
+    (async () => {
+      try {
+        const url = await FileAccess.beginSession(entry.videoUri);
+        if (cancelled) {
+          FileAccess.endSession(entry.videoUri).catch(() => {});
+          return;
+        }
+        openedHandle = entry.videoUri;
+        setPlayerSource(url);
+      } catch (e) {
+        console.warn('[player] failed to open file-access session:', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (openedHandle) FileAccess.endSession(openedHandle).catch(() => {});
+    };
+  }, [entry.videoUri]);
+
+  const player = useVideoPlayer(playerSource, (p) => {
     p.loop = false;
     p.muted = false;
     p.timeUpdateEventInterval = 0.1;

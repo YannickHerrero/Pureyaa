@@ -11,7 +11,7 @@ import {
 import { Stack, useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
-import { AnkiBridge } from 'anki-bridge';
+import { FileAccess, withSession } from 'file-access';
 import { extractAudio } from 'audio-extract';
 import { detectFromFilename, titleFromFilename } from '@/utils/filenameDetect';
 import { getOpenRouterApiKey } from '@/storage/settings';
@@ -53,9 +53,11 @@ export default function AddScreen() {
       });
       if (r.canceled) return;
       const asset = r.assets[0];
-      // Take persistent permission so the URI keeps working after restart.
-      await AnkiBridge.persistUriPermission(asset.uri);
-      const f: PickedFile = { uri: asset.uri, name: asset.name, size: asset.size };
+      // Take persistent access. The handle returned == the URI on
+      // Android (content://), the bookmark blob on iOS. We store the
+      // handle and route every read through FileAccess.beginSession.
+      const handle = await FileAccess.persistFileAccess(asset.uri);
+      const f: PickedFile = { uri: handle, name: asset.name, size: asset.size };
       setVideo(f);
       const det = detectFromFilename(asset.name);
       if (det.seriesName) setSeriesName(det.seriesName);
@@ -97,13 +99,18 @@ export default function AddScreen() {
       if (!audioDir.exists) audioDir.create({ intermediates: true });
       const audioRequested = new File(audioDir, `audio_${id}.m4a`).uri;
 
-      // Extract the full audio track. endMs is generous on purpose — the
-      // Kotlin extractor stops naturally at EOS (sampleData < 0) regardless.
-      audioPath = await extractAudio(video.uri, {
-        startMs: 0,
-        endMs: 2_000_000_000,
-        outPath: audioRequested,
-      });
+      // Extract the full audio track. video.uri is a FileAccess handle;
+      // wrap in a session so iOS opens its security-scoped resource for
+      // the duration of the extract. Android beginSession is a no-op.
+      // endMs is generous on purpose — the extractor stops naturally
+      // at EOS regardless.
+      audioPath = await withSession(video.uri, (url) =>
+        extractAudio(url, {
+          startMs: 0,
+          endMs: 2_000_000_000,
+          outPath: audioRequested,
+        }),
+      );
 
       setGenerating('transcribing');
       const audioFilename = audioPath.split('/').pop() ?? 'audio.m4a';
