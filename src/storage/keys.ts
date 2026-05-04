@@ -6,6 +6,7 @@ export const STORAGE_KEYS = {
   recentRetimers: 'pureyaa.recentRetimers.v1',
   ankiSettings: 'pureyaa.ankiSettings.v1',
   wanikaniKanjiCache: 'pureyaa.wanikaniKanjiCache.v1',
+  lastSeenUpdateId: 'pureyaa.lastSeenUpdateId.v1',
 } as const;
 
 export const SECURE_KEYS = {
