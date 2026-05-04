@@ -1,7 +1,9 @@
 # Pureyaa — working notes for AI assistants
 
 Japanese language-learning app that mines anime subtitles into Anki cards.
-Android-only. Expo SDK 55, React Native 0.83, Hermes, New Architecture.
+Android is the primary target; iOS is supported with one feature gap
+(Anki, see §3 and §7). Expo SDK 55, React Native 0.83, Hermes, New
+Architecture.
 
 ## 1. Working style for this repo
 
@@ -105,15 +107,44 @@ Android-only. Expo SDK 55, React Native 0.83, Hermes, New Architecture.
   deadlocks; channelCount > 6 fails with a clear error before
   `encoder.configure` would throw a generic one.
 
-## 6. Other project facts
+## 6. Cross-platform conventions (Android + iOS)
 
-- **Android-only.** iOS code paths are not maintained — don't add them
-  unless asked.
+- **`src/featureFlags.ts`** is the single-source-of-truth for
+  per-platform UI gating. `ANKI_AVAILABLE = Platform.OS === 'android'`
+  is the only flag right now. UI surfaces wrap their Anki-specific
+  blocks in `{ANKI_AVAILABLE && ...}`.
+- **`anki-bridge` and `audio-extract` JS shims** detect iOS via
+  `Platform.OS` and substitute proxies that throw clearly when methods
+  are called. `anki-bridge` has no iOS native module by design;
+  `audio-extract` does (Phase 3 of the iOS port).
+- **`file-access` is cross-platform** with platform-specific handle
+  formats: on Android the handle == the URI string; on iOS it's a
+  base64 security-scoped bookmark. Always wrap reads in `withSession()`
+  (no-op on Android, scope-managed on iOS).
+- **`uriExists` branches per-platform.** Android uses
+  `new File(uri).exists` directly; iOS resolves the bookmark via
+  `FileAccess.beginSession` first.
+- **Cross-platform toasts** via `src/ui/Toast.tsx` (`showToast()`).
+  Backed by `ToastAndroid` on Android, an animated bottom pill via
+  `<ToastHost />` on iOS. Don't import `ToastAndroid` directly.
+
+## 7. Other project facts
+
+- **Anki integration is Android-only.** AnkiMobile on iOS only exposes
+  a URL scheme that doesn't accept inline media or programmatic note
+  types — too crippled for our note design. iOS users get analysis,
+  playback, dict popup, saved words, Whisper subtitle generation.
+  See §6 for how this is gated in code.
 - **Whisper track-picker for dual-audio rips is intentionally
-  deferred.** Would need a Kotlin `listAudioTracks` method (small) +
-  a rebuild. Current behavior picks the first audio track, which works
-  for monolingual rips. Symptom of the missing feature: a JP/EN dual
-  audio file transcribes the dub.
+  deferred.** Would need `listAudioTracks` methods (Kotlin and Swift)
+  + a rebuild. Current behavior picks the first audio track, which
+  works for monolingual rips. Symptom of the missing feature: a JP/EN
+  dual audio file transcribes the dub.
+- **iOS audio-extract uses AVAssetExportSession** with the AppleM4A
+  preset — always re-encodes to AAC regardless of source codec. The
+  Kotlin module has codec-specific fast paths (AAC remux, Opus → ogg);
+  the Swift module trades that complexity for simplicity since the
+  cost is negligible for our typical file sizes.
 - **Hermes property limit (196k)**: the dict bundle uses `Map<>` at
   runtime; the on-disk format is array-of-pairs to avoid the per-object
   property cap. Don't switch to plain object literals for large maps.
