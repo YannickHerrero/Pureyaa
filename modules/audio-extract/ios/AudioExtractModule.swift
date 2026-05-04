@@ -24,7 +24,7 @@ public class AudioExtractModule: Module {
       startMs: Int,
       endMs: Int,
       outPath: String
-    ) -> String in
+    ) async throws -> String in
       let srcUrl = try parseFileUrl(srcUri)
       let outUrl = try prepareOutputUrl(outPath)
 
