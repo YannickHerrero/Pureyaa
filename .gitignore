@@ -19,6 +19,8 @@ ios/
 android/
 !modules/*/android/
 !modules/*/android/**
+!modules/*/ios/
+!modules/*/ios/**
 
 # Metro
 .metro-health-check*
