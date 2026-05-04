@@ -15,6 +15,7 @@ import {
 } from '@/analysis/orchestrator';
 import { getOpenRouterApiKey, getSettings } from '@/storage/settings';
 import { ANALYSIS_MODEL } from '@/analysis/llm';
+import { AnkiBridge } from 'anki-bridge';
 import {
   analysisPathFor,
   thumbnailPathFor,
@@ -98,6 +99,18 @@ export default function AnalyzeScreen() {
       durationSeconds = Math.ceil(lastCueEndMs / 1000);
     } catch {
       // proceed with defaults
+    }
+
+    // Defensive re-persist: pickVideo took permission on the URI it got
+    // back from the picker, but expo-router URL-encodes URIs into the
+    // navigation state — params.videoUri here may have a slightly
+    // different encoding than the original. Take permission again on
+    // the exact string we're about to save into the entry. No-op when
+    // the encoding round-trip was lossless.
+    try {
+      await AnkiBridge.persistUriPermission(params.videoUri);
+    } catch {
+      // Already swallowed inside the bridge; ignore here too.
     }
 
     const ep = parseInt(params.episodeNumber ?? '', 10);
